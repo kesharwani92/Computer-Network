@@ -24,3 +24,9 @@ std::ostream& operator<<(std::ostream& os, const table_row_t& r) {
 }
 
 typedef std::unordered_map<std::string,table_row_t> table_t;
+
+std::ostream& operator<<(std::ostream& os, const table_t& t) {
+  for (const std::pair<std::string,table_row_t>& r : t)
+    os << r.first << ' ' << r.second << std::endl;
+  return os;
+}

@@ -1,16 +1,16 @@
 CXX=g++
-CFLAGS=-std=c++11 -Wall
+CFLAGS=-std=c++11 -Wall -g
 
 INCS=include
-SRCS=src/print_table.cc
+SRCS=src/UdpChat.cc
 
 all: compile
 
-compile: print_table.o
-	$(CXX) -o print_table.out print_table.o
+compile: UdpChat.o
+	$(CXX) -o UdpChat UdpChat.o
 
-print_table.o:
+UdpChat.o:
 	$(CXX) $(CFLAGS) -I $(INCS) -c $(SRCS)
 
 clean:
-	rm *.o *.out
+	rm *.o UdpChat
