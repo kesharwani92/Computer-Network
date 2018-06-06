@@ -52,6 +52,10 @@ int main(int argc, char** argv) {
         buf[recvlen] = 0;
 	std::cout << buf << std::endl;
       }
+      if (sendto(fd, buf, recvlen, 0, (struct sockaddr *)&clntaddr,
+          sizeof(clntaddr)) < 0) {
+        throw "error: sendto failed";
+      }
     }
 
     close(fd);
@@ -63,28 +67,56 @@ int main(int argc, char** argv) {
     /**************************************************************************
     *  Client code starts from here
     ***************************************************************************/
-    std::string cname(argv[1]);
+    struct sockaddr_in myaddr;
+    struct sockaddr_in clntaddr;
+    socklen_t addrlen = sizeof(clntaddr);
+    int recvlen;
     int fd;
+    unsigned char buf[BUFSIZE];
     // Create server Udp socket
     if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
       throw "error: cannot create socket";
     }
-    struct sockaddr_in servaddr;
-    memset((char*)&servaddr, 0, sizeof(servaddr));
-    servaddr.sin_family = AF_INET;
-    unsigned short servport = strtoul(argv[3], nullptr, 0);
-    servaddr.sin_port = htons(servport);
-    if (inet_aton(argv[2],&servaddr.sin_addr) < 0) {
-      throw "error: invalid server ip";
-    };
+    // Bind the socket
+    memset(&myaddr, 0, sizeof(myaddr));
+    myaddr.sin_family = AF_INET;
+    myaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    unsigned short myport = strtoul(argv[4], nullptr, 0);
+    myaddr.sin_port = htons(myport);
 
-    while (true) {
-      std::cout << ">>> ";
-      std::string msg;
-      getline(std::cin, msg);
-      if (sendto(fd, msg.c_str(), msg.size(), 0, (struct sockaddr *)&servaddr,
-          sizeof(servaddr)) < 0) {
-        throw "error: sendto failed";
+    if (bind(fd, (struct sockaddr*)&myaddr, sizeof(myaddr))<0) {
+      throw "error: bind failed";
+    }
+
+    pid_t pid = fork();
+
+    if (pid == 0) {
+      while (true) {
+        recvlen = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr*)&clntaddr,
+                           &addrlen);
+        if (recvlen > 0) {
+          buf[recvlen] = 0;
+          std::cout << "echo: " << buf << std::endl << ">>> " << std::flush;
+        }
+      }
+    } else {
+      struct sockaddr_in servaddr;
+      memset((char*)&servaddr, 0, sizeof(servaddr));
+      servaddr.sin_family = AF_INET;
+      unsigned short servport = strtoul(argv[3], nullptr, 0);
+      servaddr.sin_port = htons(servport);
+      if (inet_aton(argv[2],&servaddr.sin_addr) < 0) {
+        throw "error: invalid server ip";
+      };
+
+      while (true) {
+        std::string msg;
+        std::cout << ">>> " << std::flush;
+        getline(std::cin, msg);
+        if (sendto(fd, msg.c_str(), msg.size(), 0, (struct sockaddr *)&servaddr,
+	    sizeof(servaddr)) < 0) {
+          throw "error: sendto failed";
+        }
       }
     }
     close(fd);
