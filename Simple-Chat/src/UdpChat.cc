@@ -18,7 +18,9 @@ int main(int argc, char** argv) {
     if (argc < 2) {
       throw "error: too few arguments";
     }
-    // Server code starts from here
+    /**************************************************************************
+    *  Server code starts from here
+    ***************************************************************************/
     unsigned short port = strtoul(argv[2], nullptr, 0);
     std::cout << "Server mode at port " << port << std::endl;
 
@@ -44,7 +46,8 @@ int main(int argc, char** argv) {
     }
 
     while (true) {
-      recvlen = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr*)&clntaddr,&addrlen);
+      recvlen = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr*)&clntaddr,
+                         &addrlen);
       if (recvlen > 0) {
         buf[recvlen] = 0;
 	std::cout << buf << std::endl;
@@ -57,10 +60,12 @@ int main(int argc, char** argv) {
     if (argc < 5) {
       throw "error: too few arguments";
     }
-    // Client code starts from here
+    /**************************************************************************
+    *  Client code starts from here
+    ***************************************************************************/
     std::string cname(argv[1]);
     int fd;
-    // Create a Udp socket
+    // Create server Udp socket
     if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
       throw "error: cannot create socket";
     }
@@ -72,12 +77,16 @@ int main(int argc, char** argv) {
     if (inet_aton(argv[2],&servaddr.sin_addr) < 0) {
       throw "error: invalid server ip";
     };
-    std::string msg("This is a test message");
-    if (sendto(fd, msg.c_str(), msg.size(), 0, (struct sockaddr *)&servaddr,
-        sizeof(servaddr)) < 0) {
-      throw "error: sendto failed";
-    }
 
+    while (true) {
+      std::cout << ">>> ";
+      std::string msg;
+      getline(std::cin, msg);
+      if (sendto(fd, msg.c_str(), msg.size(), 0, (struct sockaddr *)&servaddr,
+          sizeof(servaddr)) < 0) {
+        throw "error: sendto failed";
+      }
+    }
     close(fd);
   } else {
     std::cout << "warning: unknown argument " << argv[1] << std::endl;
