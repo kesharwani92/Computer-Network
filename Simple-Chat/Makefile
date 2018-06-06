@@ -14,3 +14,6 @@ UdpChat.o:
 
 clean:
 	rm *.o UdpChat
+
+run:
+	./UdpChat

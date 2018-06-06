@@ -1,5 +1,5 @@
 /*******************************************************************************
-* simple_chat.h
+* UdpChat.h
 * 
 * Defines structs and classes for the simple chat application.
 *
