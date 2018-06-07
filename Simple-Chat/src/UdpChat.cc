@@ -7,10 +7,6 @@
 * Date  : Jun 5th, 2018
 *******************************************************************************/
 #include <UdpChat.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <cstring>
 
 const size_t BUFSIZE = 2048;
 int main(int argc, char** argv) {
