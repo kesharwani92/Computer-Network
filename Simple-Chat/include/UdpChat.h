@@ -17,8 +17,8 @@
 
 // Table struct that stores client information
 typedef struct {
-  unsigned long ip;
-  unsigned short port;
+  std::string ip;
+  uint16_t port;
   bool on;
 } table_row_t;
 
@@ -36,7 +36,6 @@ std::ostream& operator<<(std::ostream& os, const table_t& t) {
     os << r.first << ' ' << r.second << std::endl;
   return os;
 }
-
 
 // Udp message type that will be exported by the socket wrapper. The ip and port
 // number are converted to standard types when parsed to the main program.
@@ -64,15 +63,13 @@ public:
     if (bind(fd_, (struct sockaddr*)&myaddr_, sizeof(myaddr_))<0) {
       throw "error: bind failed";
     }
-    std::cout << "Register at " << inet_ntoa(myaddr_.sin_addr) << ':';
-    std::cout << ntohs(myaddr_.sin_port) << std::endl;
   }
 
   ~UdpSocket() {
     close(fd_);
   }
 
-  void SendTo(char* ip, uint16_t port, const std::string& msg) {
+  void SendTo(const char* ip, uint16_t port, const std::string& msg) {
     memset((char*)&clntaddr_, 0, sizeof(clntaddr_));
     clntaddr_.sin_family = AF_INET;
     clntaddr_.sin_port = htons(port);
