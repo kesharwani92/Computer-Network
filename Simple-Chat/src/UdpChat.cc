@@ -27,10 +27,18 @@ table_row_t __str_to_row(std::string s) {
   return r;
 }
 
-std::pair<std::string, table_row_t> __get_table_pair(std::string s) {
-  std::cout << "string = " << s << std::endl;
-  size_t pos = s.find(':');
-  return {s.substr(0,pos), __str_to_row(s.substr(pos+1, s.size()))};
+typedef std::pair<std::string, table_row_t> table_pair_t;
+
+table_pair_t __get_table_pair(std::string s) {
+  size_t pos1 = s.find(':');
+  size_t pos2 = s.find(':', pos1+1);
+  size_t pos3 = s.find(':', pos2+1);
+  table_pair_t res;
+  res.first = s.substr(0, pos1);
+  res.second.ip = s.substr(pos1+1, pos2-pos1-1);
+  res.second.port = strtoul(s.substr(pos2+1,pos3-pos2-1).c_str(),nullptr,0);
+  res.second.on = (s[pos3+1] == '1');
+  return res;
 }
 
 const size_t BUFSIZE = 2048;
@@ -60,9 +68,15 @@ int main(int argc, char** argv) {
 	table_row_t newrow{msg.ip, msg.port, true};
         usertable.insert({newname, newrow});
         std::cout << "Update usertable:" << std::endl << usertable << std::endl;
-	udp.SendTo(msg.ip.c_str(), msg.port, "ACK");
+	      udp.SendTo(msg.ip.c_str(), msg.port, "ACK");
         // TODO: maybe request ACK from client?
-        udp.SendTo(msg.ip.c_str(), msg.port, "TABLE:" + newname + ":" + __row_to_str(newrow));
+        
+        for (auto it = usertable.begin(); it != usertable.end(); it++) {
+          udp.SendTo(it->second.ip.c_str(), it->second.port,
+                     "TABLE:" + newname + ":" + __row_to_str(newrow));
+	        udp.SendTo(msg.ip.c_str(), msg.port,
+                     "TABLE:" + it->first + ":" + __row_to_str(it->second));
+        }
       }
     }
 
@@ -99,17 +113,11 @@ int main(int argc, char** argv) {
         udpmsg_t msg = udp.Listen();
         size_t pos0 = msg.msg.find(':');
         if (msg.msg.substr(0, pos0) == "TABLE") {
-	  size_t pos1 = msg.msg.find(':', pos0+1);
-	  std::string username = msg.msg.substr(pos0+1, pos1-pos0-1);
-	  table_row_t row;
-	  size_t pos2 = msg.msg.find(':', pos1+1);
-          row.ip = msg.msg.substr(pos1+1, pos2-pos1-1);
-	  size_t pos3 = msg.msg.find(':', pos2+1);
-          row.port = strtoul(msg.msg.substr(pos2+1,pos3-pos2-1).c_str(),nullptr,0);
-	  row.on = (msg.msg[pos3+1] == '1');
-	  (*usertable)[username] = row;
-	  std::cout << "New user: " << username << " " << row << std::endl;
-	}
+          table_pair_t p = __get_table_pair(msg.msg.substr(pos0+1,
+                                                           msg.msg.size()));
+          (*usertable)[p.first] = p.second;
+          std::cout << "New user: " << p.first << " " << p.second << std::endl;
+        }
       }
     // Talker: take input from the user
     } else {
@@ -117,7 +125,7 @@ int main(int argc, char** argv) {
         std::string msg;
         std::cout << ">>> " << std::flush;
         getline(std::cin, msg);
-	udp.SendTo(argv[3], servport, msg);
+	      udp.SendTo(argv[3], servport, msg);
       }
     }
   } else {
