@@ -9,6 +9,7 @@
 #include <UdpChat.h>
 #include <sys/mman.h>
 #include <sstream>
+
 std::string __row_to_str(table_row_t r) {
   std::stringstream ss;
   ss << r.ip << ':' << r.port << ':' << r.on;
@@ -41,7 +42,6 @@ table_pair_t __get_table_pair(std::string s) {
   return res;
 }
 
-const size_t BUFSIZE = 2048;
 int main(int argc, char** argv) {
   /*****************************************************************************
   *  Server code starts from here
@@ -57,20 +57,28 @@ int main(int argc, char** argv) {
     table_t usertable;
 
     while (true) {
-      udpmsg_t msg = udp.Listen();
+      udpmsg_t msg;
+      udp.Listen(msg);
       std::cout << "Receive msg from " << msg.ip << ':';
       std::cout << msg.port << std::endl << msg.msg << std::endl;
 
       size_t delim = msg.msg.find(':');
       if (msg.msg.substr(0, delim) == "NEWUSER") {
-        std::cout << "Register new user " << msg.msg << std::endl;
         std::string newname(msg.msg.substr(delim+1, msg.msg.size()));
-	table_row_t newrow{msg.ip, msg.port, true};
+
+        if (usertable.find(newname) != usertable.end()) {
+          std::cout << "warning: duplicate user name " << newname << std::endl;
+          continue;
+        }
+
+        // ACK the new user
+        std::cout << "ACK new user " << msg.msg << std::endl;
+        table_row_t newrow{msg.ip, msg.port, true};
         usertable.insert({newname, newrow});
-        std::cout << "Update usertable:" << std::endl << usertable << std::endl;
 	      udp.SendTo(msg.ip.c_str(), msg.port, "ACK");
-        // TODO: maybe request ACK from client?
         
+        // 1. Broadcast the new user to all users
+        // 2. Send a copy of table to the new user
         for (auto it = usertable.begin(); it != usertable.end(); it++) {
           udp.SendTo(it->second.ip.c_str(), it->second.port,
                      "TABLE:" + newname + ":" + __row_to_str(newrow));
@@ -96,7 +104,8 @@ int main(int argc, char** argv) {
     uint16_t servport = strtoul(argv[4], nullptr, 0);
 
     udp.SendTo(argv[2], servport, "NEWUSER:"+nickname);
-    if (udp.Listen().msg != "ACK") {
+    udpmsg_t msg;
+    if (!udp.Listen(msg,1,0) || msg.msg != "ACK") {
       std::cout << "error: register failed" << std::endl;
       return 1;
     }
@@ -110,13 +119,13 @@ int main(int argc, char** argv) {
     // Listener: response to a udp message
     if (pid > 0) {
       while (true) {
-        udpmsg_t msg = udp.Listen();
+        udpmsg_t msg;
+        udp.Listen(msg);
         size_t pos0 = msg.msg.find(':');
         if (msg.msg.substr(0, pos0) == "TABLE") {
           table_pair_t p = __get_table_pair(msg.msg.substr(pos0+1,
                                                            msg.msg.size()));
           (*usertable)[p.first] = p.second;
-          std::cout << "New user: " << p.first << " " << p.second << std::endl;
         }
       }
     // Talker: take input from the user
@@ -125,7 +134,8 @@ int main(int argc, char** argv) {
         std::string msg;
         std::cout << ">>> " << std::flush;
         getline(std::cin, msg);
-	      udp.SendTo(argv[3], servport, msg);
+        if (msg.size() > 0)
+	        udp.SendTo(argv[3], servport, msg);
       }
     }
   } else {

@@ -82,13 +82,26 @@ public:
     }
   }
 
-  udpmsg_t Listen() {
-      size_t recvlen = recvfrom(fd_, buf_, BUFSIZE, 0,
-                                (struct sockaddr*)&clntaddr_, &addrlen_);
-      buf_[recvlen] = 0;
-      return udpmsg_t{std::string(inet_ntoa(clntaddr_.sin_addr)),
-                      ntohs(clntaddr_.sin_port),
-                      std::string((char*) buf_, recvlen)};
+  bool Listen(udpmsg_t& msg, time_t sec = 0, suseconds_t usec = 0) {
+    struct timeval tv;
+    tv.tv_sec = sec;
+    tv.tv_usec = usec;
+    if (setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+      throw "error: setsockopt failed";
+
+    size_t ret = recvfrom(fd_, buf_, BUFSIZE, 0,
+                          (struct sockaddr*)&clntaddr_, &addrlen_);
+    if (ret > 0) {
+      buf_[ret] = 0;
+      msg = {std::string(inet_ntoa(clntaddr_.sin_addr)),
+             ntohs(clntaddr_.sin_port),
+             std::string((char*) buf_, ret)};
+      return true;
+    } else if (ret == EAGAIN) {// Timeout
+        return false;
+    } else {
+      throw "error: recvfrom failed";
+    }
   }
 
 private:
