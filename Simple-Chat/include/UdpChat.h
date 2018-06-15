@@ -94,7 +94,10 @@ public:
     myaddr_.sin_addr.s_addr = htonl(INADDR_ANY);
     myaddr_.sin_port = htons(port);
     int option = 1;
-    setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option));
+    if (setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option)) == -1) {
+      std::cerr << "error: setsocketopt failed" << std::endl;
+      exit(1);
+    }
     if (bind(fd_, (struct sockaddr*)&myaddr_, sizeof(myaddr_))<0) {
       std::cerr << "error: bind failed" << std::endl;
       std::cerr << "error: " << strerror(errno) << std::endl;
@@ -140,7 +143,7 @@ public:
              std::string((char*) buf_, ret)};
       return true;
     } else if (errno == EAGAIN || errno == EWOULDBLOCK ) {// Timeout
-      std::cout << "warning: timeout!!" << std::endl;
+      //std::cout << "warning: timeout!!" << std::endl;
       return false;
     } else {
       std::cerr << "error: recvfrom failed" << std::endl;
