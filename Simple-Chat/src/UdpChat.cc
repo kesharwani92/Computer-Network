@@ -86,6 +86,13 @@ int main(int argc, char** argv) {
                      "TABLE:" + target + ":" + __row_to_str(usertable[target]));
         }
         udp.SendTo(msg.ip.c_str(), msg.port, "ACK");
+      } else if (msg.msg.substr(0, delim) == "REG") {
+        std::string target = msg.msg.substr(delim+1, msg.msg.size());
+        if (usertable.find(target) == usertable.end()) {
+          std::cout << "warning: " << target << " doesn't exist" << std::endl;
+          continue;
+        }
+        usertable[target].active = true;
       } else if (msg.msg.substr(0, delim) == "OFFMSG") {
         size_t pos1 = msg.msg.find(':', delim+1);
         std::string target = msg.msg.substr(delim+1,pos1-delim-1);
@@ -93,11 +100,17 @@ int main(int argc, char** argv) {
           std::cout << "warning: " << target << " doesn't exist" << std::endl;
           continue;
         }
-        udp.SendTo(usertable[target].ip.c_str(), usertable[target].port,
-                   "SERVCHECK:");
-        udpmsg_t chkmsg;
-        if (udp.Listen(chkmsg, 0, 50000) && chkmsg.msg == "ACK") {
+        //udp.SendTo(usertable[target].ip.c_str(), usertable[target].port,
+        //           "SERVCHECK:");
+        //udpmsg_t chkmsg;
+        //if (udp.Listen(chkmsg, 0, 50000) && chkmsg.msg == "ACK") {
+        if (usertable[target].active) {
           udp.SendTo(msg.ip.c_str(), msg.port, "NAK");
+          for (auto it = usertable.begin(); it != usertable.end(); it++) {
+            std::cout << it->first << ":" << it->second << std::endl;
+	          udp.SendTo(msg.ip.c_str(), msg.port,
+                       "TABLE:" + it->first + ":" + __row_to_str(it->second));
+          }
         } else {
           //TODO: save to text file
           udp.SendTo(msg.ip.c_str(), msg.port, "ACK");
@@ -159,42 +172,48 @@ int main(int argc, char** argv) {
           }
           std::string outmsg = "MSG:" + nickname + ":  " +
                                usercmd.substr(pos1+1, usercmd.size());
+          if (!usertable[target].active) {
+            std::cout << "[" << target << " is offline, message sent to server.]"
+                      << std::endl << ">>> " << std::flush;
+            goto offline_msg;
+          }
           udp.SendTo(usertable[target].ip.c_str(), usertable[target].port,
                      outmsg);
           if (udp.Listen(msg,0,500000) && msg.msg == "ACK") {
             std::cout << "[Message received by "+ target + ".]" << std::endl
                       << ">>> " << std::flush;
+            goto clearevent;
           } else {
-            // Send offline message and wait for server confirm
             std::cout << "[No ACK from " << target
                       << ", message sent to server.]" << std::endl
                       << ">>> " << std::flush;
-            struct timeval timestamp;
-            if (gettimeofday(&timestamp, nullptr) == -1) {
-              std::cerr << "error: gettimeofday() failed\n" << strerror(errno)
-                        << std::endl;
-              exit(1);
-            }
-            outmsg = "OFFMSG:"+ target + ":" + nickname + ":  <" +
-                     std::to_string(timestamp.tv_sec) + "> " +
-                     usercmd.substr(pos1+1, usercmd.size());
-            udp.SendTo(argv[3], servport, outmsg);
-            for (int i = 0; i < 6; i++) {
-              if (udp.Listen(msg,0,500000)) {
-                if (msg.msg == "ACK") {
-                  std::cout << "[Messages received by the server and saved]\n>>> "
-                            << std::flush;
-                  goto clearevent;
-                } else if (msg.msg == "NAK") {
-                  std::cerr << "[Client <nick-name> exists!!]\n>>> "
-                            << std::flush;
-                  goto clearevent;
-                }
-              }
-            }
-            std::cout << "[Server not responding]\n>>> [Exiting]" << std::endl;
+          }
+offline_msg:
+          struct timeval timestamp;
+          if (gettimeofday(&timestamp, nullptr) == -1) {
+            std::cerr << "error: gettimeofday() failed\n" << strerror(errno)
+                      << std::endl;
             exit(1);
           }
+          outmsg = "OFFMSG:"+ target + ":" + nickname + ":  <" +
+                   std::to_string(timestamp.tv_sec) + "> " +
+                   usercmd.substr(pos1+1, usercmd.size());
+          udp.SendTo(argv[3], servport, outmsg);
+          for (int i = 0; i < 6; i++) {
+            if (udp.Listen(msg,0,500000)) {
+              if (msg.msg == "ACK") {
+                std::cout << "[Messages received by the server and saved]\n>>> "
+                          << std::flush;
+                goto clearevent;
+              } else if (msg.msg == "NAK") {
+                std::cerr << "[Client "<< target << " exists!!]\n>>> "
+                          << std::flush;
+                goto clearevent;
+              }
+            }
+          }
+          std::cout << "[Server not responding]\n>>> [Exiting]" << std::endl;
+          exit(1);
         } else if (usercmd.substr(0,pos0) == "dereg") {
           std::string target = usercmd.substr(pos0+1, usercmd.size());
           if (target != nickname) {
@@ -235,8 +254,6 @@ clearevent:
         udp.SendTo(msg.ip.c_str(), msg.port, "ACK");
         std::cout << msg.msg.substr(pos0+1, msg.msg.size()) << std::endl
                   << ">>> " << std::flush;
-      } else if (msg.msg.substr(0, pos0) == "SERVCHECK") {
-        udp.SendTo(argv[3], servport, "ACK");
       }
     }
     proc_running = false;
