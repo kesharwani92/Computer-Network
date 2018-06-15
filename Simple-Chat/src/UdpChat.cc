@@ -107,23 +107,38 @@ int main(int argc, char** argv) {
     udp.SendTo(argv[3], servport, "NEWUSER:"+nickname);
     udpmsg_t msg;
     while (!udp.Listen(msg, 1, 0) || msg.msg != "ACK") {
-      std::cout << "error: register failed. Retrying..." << std::endl;
+      std::cout << "error: register failed." << std::endl;
+      exit(1);
     }
-    //usertable[nickname] = {std::string(argv[3]), myport, true};
     bool offline = false;
     std::thread tin(intepreter);
     while (proc_running) {
       msg.msg.clear(); // If not clear, will print out at next iteration
+
+      // Process terminal input
       if (userevent) {
         size_t pos0 = usercmd.find(' ');
+        if (usercmd.substr(0,pos0) == "reg") {
+          std::string target = usercmd.substr(pos0+1, usercmd.size());
+          if (!offline) {
+            std::cerr << "warning: you're already online " << target
+                      << std::endl << ">>> " << std::flush;
+            goto clearevent;
+          } else if (target != nickname) {
+            std::cerr << "warning: invalid nickname " << target << std::endl
+                      << ">>> " << std::flush;
+            goto clearevent;
+          }
+          udp.SendTo(argv[3], servport, "REG:"+target);
+          offline = false;
+        }
+        if (offline) goto clearevent;
         if (usercmd.substr(0,pos0) == "send") {
           size_t pos1 = usercmd.find(' ', pos0+1);
           std::string target = usercmd.substr(pos0+1, pos1-pos0-1);
           if (usertable.find(target) == usertable.end() ) {
             std::cerr << "warning: " << target << " doesn't exist" << std::endl;
             goto clearevent;
-            //userevent = false;
-            //continue;
           }
           std::string outmsg = "MSG:" + nickname + ":  " +
                                usercmd.substr(pos1+1, usercmd.size());
@@ -139,6 +154,12 @@ int main(int argc, char** argv) {
           }
         } else if (usercmd.substr(0,pos0) == "dereg") {
           std::string target = usercmd.substr(pos0+1, usercmd.size());
+          if (target != nickname) {
+            std::cerr << "warning: invalid nickname " << target << std::endl
+                      << ">>> " << std::flush;
+            goto clearevent;
+          }
+          // Repeat deregistratino up to 6 times
           for (int i = 0; i < 6; i++) {
             udp.SendTo(argv[3], servport, "DEREG:"+target);
             if (udp.Listen(msg,0,500000) && msg.msg == "ACK") {
@@ -154,6 +175,8 @@ int main(int argc, char** argv) {
 clearevent:
         userevent = false;
       }
+
+      // Process UDP message if not offline
       if (offline || !udp.Listen(msg,0,5000) || msg.msg.empty()) {
         continue;
       }
@@ -164,8 +187,7 @@ clearevent:
         table_pair_t p = __get_table_pair(msg.msg.substr(pos0+1,
                                                          msg.msg.size()));
         usertable[p.first] = p.second;
-        //std::cout << "Update table" << std::endl << ">>> " << std::flush;
-        //std::cout << usertable << ">>> " << std::flush;
+        std::cout << "[Client table updated.]\n>>> " << std::flush;
       } else if (msg.msg.substr(0, pos0) == "MSG") {
         udp.SendTo(msg.ip.c_str(), msg.port, "ACK");
         std::cout << msg.msg.substr(pos0+1, msg.msg.size()) << std::endl
