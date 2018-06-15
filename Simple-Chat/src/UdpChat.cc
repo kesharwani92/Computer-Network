@@ -12,33 +12,18 @@
 // Shared memory
 bool proc_running = true;
 table_t usertable;
+std::string usercmd;
+bool userevent = false;
 
-void client_listen(uint16_t port) {
-  UdpSocket udp(port);
-  udpmsg_t msg;
+void intepreter() {
+  std::string msg;
   while (proc_running) {
-    if (!udp.Listen(msg) || msg.msg.empty()) continue;
-    //std::cout << "receive msg: " << msg.msg << std::endl;
-    size_t pos0 = msg.msg.find(':');
-    if (msg.msg.substr(0, pos0) == "TABLE") {
-      table_pair_t p = __get_table_pair(msg.msg.substr(pos0+1,
-                                                       msg.msg.size()));
-      usertable[p.first] = p.second;
-      std::cout << "Update table" << std::endl;
-      std::cout << usertable;
-    }
-  }
-  std::cout << "client_listen finished cleanly" << std::endl;
-}
-
-void client_talk(uint16_t port, entry_t servaddr) {
-  UdpSocket udp(port);
-  while (proc_running) {
-    std::string msg;
     std::cout << ">>> " << std::flush;
     getline(std::cin, msg);
-    if (msg.size() > 0)
-	    udp.SendTo(servaddr.ip.c_str(), servaddr.port, msg);
+    //std::cout << "echo " << usercmd << std::endl;
+    if (msg.empty()) continue;
+    usercmd = msg;
+    userevent = true;
   }
   std::cout << "client_talk finished cleanly" << std::endl;
 }
@@ -87,6 +72,19 @@ int main(int argc, char** argv) {
 	        udp.SendTo(msg.ip.c_str(), msg.port,
                      "TABLE:" + it->first + ":" + __row_to_str(it->second));
         }
+      } else if (msg.msg.substr(0, delim) == "DEREG") {
+        std::string target = msg.msg.substr(delim+1, msg.msg.size());
+        if (usertable.find(target) == usertable.end()) {
+          std::cout << "warning: " << target << " doesn't exist" << std::endl;
+          continue;
+        }
+        usertable[target].active = false;
+        for (auto it = usertable.begin(); it != usertable.end(); it++) {
+          std::cout << it->first << ":" << it->second << std::endl;
+          udp.SendTo(it->second.ip.c_str(), it->second.port,
+                     "TABLE:" + target + ":" + __row_to_str(usertable[target]));
+        }
+        udp.SendTo(msg.ip.c_str(), msg.port, "ACK");
       }
     }
 
@@ -111,12 +109,71 @@ int main(int argc, char** argv) {
     while (!udp.Listen(msg, 1, 0) || msg.msg != "ACK") {
       std::cout << "error: register failed. Retrying..." << std::endl;
     }
-    usertable[nickname] = {std::string(argv[3]), myport, true};
-
-    std::thread talker(client_talk, myport, server);
-    std::thread listener(client_listen, myport);
-    talker.join();
-    listener.join();
+    //usertable[nickname] = {std::string(argv[3]), myport, true};
+    bool offline = false;
+    std::thread tin(intepreter);
+    while (proc_running) {
+      msg.msg.clear(); // If not clear, will print out at next iteration
+      if (userevent) {
+        size_t pos0 = usercmd.find(' ');
+        if (usercmd.substr(0,pos0) == "send") {
+          size_t pos1 = usercmd.find(' ', pos0+1);
+          std::string target = usercmd.substr(pos0+1, pos1-pos0-1);
+          if (usertable.find(target) == usertable.end() ) {
+            std::cerr << "warning: " << target << " doesn't exist" << std::endl;
+            goto clearevent;
+            //userevent = false;
+            //continue;
+          }
+          std::string outmsg = "MSG:" + nickname + ":  " +
+                               usercmd.substr(pos1+1, usercmd.size());
+          udp.SendTo(usertable[target].ip.c_str(), usertable[target].port,
+                     outmsg);
+          if (udp.Listen(msg,0,500000) && msg.msg == "ACK") {
+            std::cout << "[Message received by "+ target + ".]" << std::endl
+                      << ">>> " << std::flush;
+          } else {
+            std::cout << "[No ACK from " << target
+                      << ", message sent to server.]" << std::endl
+                      << ">>> " << std::flush;
+          }
+        } else if (usercmd.substr(0,pos0) == "dereg") {
+          std::string target = usercmd.substr(pos0+1, usercmd.size());
+          for (int i = 0; i < 6; i++) {
+            udp.SendTo(argv[3], servport, "DEREG:"+target);
+            if (udp.Listen(msg,0,500000) && msg.msg == "ACK") {
+              std::cout << "[You are Offline. Bye.]" << std::endl
+                        << ">>> " << std::flush;
+              offline = true;
+              goto clearevent;
+            }
+          }
+          std::cout << "[Server not responding]\n>>> [Exiting]" << std::endl;
+          exit(1);
+        }
+clearevent:
+        userevent = false;
+      }
+      if (offline || !udp.Listen(msg,0,5000) || msg.msg.empty()) {
+        continue;
+      }
+      std::cout << "receive msg: " << msg.msg << std::endl
+                << ">>> " << std::flush;
+      size_t pos0 = msg.msg.find(':');
+      if (msg.msg.substr(0, pos0) == "TABLE") {
+        table_pair_t p = __get_table_pair(msg.msg.substr(pos0+1,
+                                                         msg.msg.size()));
+        usertable[p.first] = p.second;
+        //std::cout << "Update table" << std::endl << ">>> " << std::flush;
+        //std::cout << usertable << ">>> " << std::flush;
+      } else if (msg.msg.substr(0, pos0) == "MSG") {
+        udp.SendTo(msg.ip.c_str(), msg.port, "ACK");
+        std::cout << msg.msg.substr(pos0+1, msg.msg.size()) << std::endl
+                  << ">>> " << std::flush;
+      }
+    }
+    proc_running = false;
+    tin.join();
   } else {
     std::cout << "warning: unknown argument " << argv[1] << std::endl;
     return 1;
