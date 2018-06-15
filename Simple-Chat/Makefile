@@ -7,7 +7,7 @@ SRCS=src/UdpChat.cc
 all: compile
 
 compile: UdpChat.o
-	$(CXX) -o UdpChat UdpChat.o
+	$(CXX) -o UdpChat UdpChat.o -lpthread
 
 UdpChat.o:
 	$(CXX) $(CFLAGS) -I $(INCS) -c $(SRCS)

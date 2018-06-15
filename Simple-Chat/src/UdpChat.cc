@@ -7,54 +7,48 @@
 * Date  : Jun 6th, 2018
 *******************************************************************************/
 #include <UdpChat.h>
-#include <sys/mman.h>
-#include <sstream>
+#include <thread>
 
-std::string __row_to_str(table_row_t r) {
-  std::stringstream ss;
-  ss << r.ip << ':' << r.port << ':' << r.on;
-  return ss.str();
+// Shared memory
+bool proc_running = true;
+table_t usertable;
+
+void client_listen(uint16_t port) {
+  UdpSocket udp(port);
+  udpmsg_t msg;
+  while (proc_running) {
+    if (!udp.Listen(msg) || msg.msg.empty()) continue;
+    size_t pos0 = msg.msg.find(':');
+    if (msg.msg.substr(0, pos0) == "TABLE") {
+      table_pair_t p = __get_table_pair(msg.msg.substr(pos0+1,
+                                                       msg.msg.size()));
+      usertable[p.first] = p.second;
+    }
+  }
 }
 
-table_row_t __str_to_row(std::string s) {
-  size_t pos;
-  table_row_t r;
-  pos = s.find(':');
-  r.ip = s.substr(0,pos);
-  pos = s.find(':', pos+1);
-  r.port = strtoul(s.substr(pos,pos+5).c_str(),nullptr,0);
-  pos = s.find(':', pos+1);
-  r.on = (s[pos+1] == '1');
-  return r;
-}
-
-typedef std::pair<std::string, table_row_t> table_pair_t;
-
-table_pair_t __get_table_pair(std::string s) {
-  size_t pos1 = s.find(':');
-  size_t pos2 = s.find(':', pos1+1);
-  size_t pos3 = s.find(':', pos2+1);
-  table_pair_t res;
-  res.first = s.substr(0, pos1);
-  res.second.ip = s.substr(pos1+1, pos2-pos1-1);
-  res.second.port = strtoul(s.substr(pos2+1,pos3-pos2-1).c_str(),nullptr,0);
-  res.second.on = (s[pos3+1] == '1');
-  return res;
+void client_talk(uint16_t port, entry_t servaddr) {
+  UdpSocket udp(port);
+  while (proc_running) {
+        std::string msg;
+        std::cout << ">>> " << std::flush;
+        getline(std::cin, msg);
+        if (msg.size() > 0)
+	        udp.SendTo(servaddr.ip.c_str(), servaddr.port, msg);
+  }
 }
 
 int main(int argc, char** argv) {
-  /*****************************************************************************
-  *  Server code starts from here
-  *****************************************************************************/
+  // Server side
   if (std::string(argv[1]) == "-s") {
     if (argc < 2) {
       throw "error: too few arguments";
     }
+
+    // Initialize udp socket
     uint16_t port = strtoul(argv[2], nullptr, 0);
     UdpSocket udp(port);
     std::cout << "Server mode" << std::endl;
-
-    table_t usertable;
 
     while (true) {
       udpmsg_t msg;
@@ -73,7 +67,7 @@ int main(int argc, char** argv) {
 
         // ACK the new user
         std::cout << "ACK new user " << msg.msg << std::endl;
-        table_row_t newrow{msg.ip, msg.port, true};
+        entry_t newrow{msg.ip, msg.port, true};
         usertable.insert({newname, newrow});
 	      udp.SendTo(msg.ip.c_str(), msg.port, "ACK");
         
@@ -88,58 +82,37 @@ int main(int argc, char** argv) {
       }
     }
 
-  /*****************************************************************************
-  *  Client code starts from here
-  *****************************************************************************/
+  // Client side
   } else if (std::string(argv[1]) == "-c") {
     if (argc < 5) {
       throw "error: too few arguments";
     }
+    // Initialize udp socket
     uint16_t myport = strtoul(argv[5], nullptr, 0);
     UdpSocket udp(myport);
     std::cout << "Client mode" << std::endl;
 
+    // Server address
+    uint16_t servport = strtoul(argv[4], nullptr, 0);
+    entry_t server{std::string(argv[3]), servport, true};
+
     // Create a new nickname on the server
     std::string nickname(argv[2]);
-    uint16_t servport = strtoul(argv[4], nullptr, 0);
 
     udp.SendTo(argv[2], servport, "NEWUSER:"+nickname);
     udpmsg_t msg;
-    if (!udp.Listen(msg,1,0) || msg.msg != "ACK") {
+    while (!udp.Listen(msg,1,0) || msg.msg != "ACK") {
       std::cout << "error: register failed" << std::endl;
       return 1;
     }
 
-    table_t* usertable = (table_t*) mmap(NULL, sizeof(table_t),
-                                         PROT_READ|PROT_WRITE,
-                                         MAP_SHARED|MAP_ANONYMOUS, -1, 0);
-    (*usertable) = table_t();
-    pid_t pid = fork();
-
-    // Listener: response to a udp message
-    if (pid > 0) {
-      while (true) {
-        udpmsg_t msg;
-        udp.Listen(msg);
-        size_t pos0 = msg.msg.find(':');
-        if (msg.msg.substr(0, pos0) == "TABLE") {
-          table_pair_t p = __get_table_pair(msg.msg.substr(pos0+1,
-                                                           msg.msg.size()));
-          (*usertable)[p.first] = p.second;
-        }
-      }
-    // Talker: take input from the user
-    } else {
-      while (true) {
-        std::string msg;
-        std::cout << ">>> " << std::flush;
-        getline(std::cin, msg);
-        if (msg.size() > 0)
-	        udp.SendTo(argv[3], servport, msg);
-      }
-    }
+    std::thread listener(client_listen, myport);
+    std::thread talker(client_talk, myport, server);
+    listener.join();
+    talker.join();
   } else {
     std::cout << "warning: unknown argument " << argv[1] << std::endl;
+    return 1;
   }
   return 0;
 }
