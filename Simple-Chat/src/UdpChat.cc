@@ -18,28 +18,35 @@ void client_listen(uint16_t port) {
   udpmsg_t msg;
   while (proc_running) {
     if (!udp.Listen(msg) || msg.msg.empty()) continue;
+    //std::cout << "receive msg: " << msg.msg << std::endl;
     size_t pos0 = msg.msg.find(':');
     if (msg.msg.substr(0, pos0) == "TABLE") {
       table_pair_t p = __get_table_pair(msg.msg.substr(pos0+1,
                                                        msg.msg.size()));
       usertable[p.first] = p.second;
+      std::cout << "Update table" << std::endl;
+      std::cout << usertable;
     }
   }
+  std::cout << "client_listen finished cleanly" << std::endl;
 }
 
 void client_talk(uint16_t port, entry_t servaddr) {
   UdpSocket udp(port);
   while (proc_running) {
-        std::string msg;
-        std::cout << ">>> " << std::flush;
-        getline(std::cin, msg);
-        if (msg.size() > 0)
-	        udp.SendTo(servaddr.ip.c_str(), servaddr.port, msg);
+    std::string msg;
+    std::cout << ">>> " << std::flush;
+    getline(std::cin, msg);
+    if (msg.size() > 0)
+	    udp.SendTo(servaddr.ip.c_str(), servaddr.port, msg);
   }
+  std::cout << "client_talk finished cleanly" << std::endl;
 }
 
 int main(int argc, char** argv) {
-  // Server side
+  /****************************************************************************
+  ** Server side
+  *****************************************************************************/
   if (std::string(argv[1]) == "-s") {
     if (argc < 2) {
       throw "error: too few arguments";
@@ -74,6 +81,7 @@ int main(int argc, char** argv) {
         // 1. Broadcast the new user to all users
         // 2. Send a copy of table to the new user
         for (auto it = usertable.begin(); it != usertable.end(); it++) {
+          std::cout << it->first << ":" << it->second << std::endl;
           udp.SendTo(it->second.ip.c_str(), it->second.port,
                      "TABLE:" + newname + ":" + __row_to_str(newrow));
 	        udp.SendTo(msg.ip.c_str(), msg.port,
@@ -82,7 +90,9 @@ int main(int argc, char** argv) {
       }
     }
 
-  // Client side
+  /****************************************************************************
+  ** Client side
+  *****************************************************************************/
   } else if (std::string(argv[1]) == "-c") {
     if (argc < 5) {
       throw "error: too few arguments";
@@ -90,26 +100,23 @@ int main(int argc, char** argv) {
     // Initialize udp socket
     uint16_t myport = strtoul(argv[5], nullptr, 0);
     UdpSocket udp(myport);
-    std::cout << "Client mode" << std::endl;
 
     // Server address
     uint16_t servport = strtoul(argv[4], nullptr, 0);
     entry_t server{std::string(argv[3]), servport, true};
 
-    // Create a new nickname on the server
     std::string nickname(argv[2]);
-
-    udp.SendTo(argv[2], servport, "NEWUSER:"+nickname);
+    udp.SendTo(argv[3], servport, "NEWUSER:"+nickname);
     udpmsg_t msg;
-    while (!udp.Listen(msg,1,0) || msg.msg != "ACK") {
-      std::cout << "error: register failed" << std::endl;
-      return 1;
+    while (!udp.Listen(msg, 1, 0) || msg.msg != "ACK") {
+      std::cout << "error: register failed. Retrying..." << std::endl;
     }
+    usertable[nickname] = {std::string(argv[3]), myport, true};
 
-    std::thread listener(client_listen, myport);
     std::thread talker(client_talk, myport, server);
-    listener.join();
+    std::thread listener(client_listen, myport);
     talker.join();
+    listener.join();
   } else {
     std::cout << "warning: unknown argument " << argv[1] << std::endl;
     return 1;
