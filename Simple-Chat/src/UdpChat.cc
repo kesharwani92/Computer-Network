@@ -9,6 +9,7 @@
 #include <UdpChat.h>
 #include <thread>
 #include <sys/time.h>
+#include <fstream>
 
 // Shared memory
 bool proc_running = true;
@@ -28,6 +29,16 @@ void intepreter() {
   }
   std::cout << "client_talk finished cleanly" << std::endl;
 }
+
+void write_to_file(std::string filename, std::string msg) {
+  std::cout << "write to " << filename << std::endl;
+  std::cout << "content: " << msg << std::endl;
+  std::ofstream file;
+  file.open(filename,std::ios::out | std::ios::app);
+  file << msg << std::endl;
+  file.close();
+}
+
 
 int main(int argc, char** argv) {
   /****************************************************************************
@@ -93,6 +104,26 @@ int main(int argc, char** argv) {
           continue;
         }
         usertable[target].active = true;
+        usertable[target].ip = msg.ip;
+        usertable[target].port = msg.port;
+        std::ifstream f((target+".log").c_str());
+        if (f.good() && f.is_open()) {
+          std::string line;
+          udp.SendTo(usertable[target].ip.c_str(), usertable[target].port,
+                     "ACK");
+          while (std::getline(f, line)) {
+            udp.SendTo(usertable[target].ip.c_str(), usertable[target].port,
+                     "MSG:"+line);
+          }
+          f.close();
+          if (remove((target+".log").c_str())) {
+            std::cerr << "error: remove operation failed" << std::endl;
+            std::cerr << strerror(errno) << std::endl;
+          }
+        } else {
+          udp.SendTo(usertable[target].ip.c_str(), usertable[target].port,
+                     "NAK");
+        }
       } else if (msg.msg.substr(0, delim) == "OFFMSG") {
         size_t pos1 = msg.msg.find(':', delim+1);
         std::string target = msg.msg.substr(delim+1,pos1-delim-1);
@@ -100,10 +131,6 @@ int main(int argc, char** argv) {
           std::cout << "warning: " << target << " doesn't exist" << std::endl;
           continue;
         }
-        //udp.SendTo(usertable[target].ip.c_str(), usertable[target].port,
-        //           "SERVCHECK:");
-        //udpmsg_t chkmsg;
-        //if (udp.Listen(chkmsg, 0, 50000) && chkmsg.msg == "ACK") {
         if (usertable[target].active) {
           udp.SendTo(msg.ip.c_str(), msg.port, "NAK");
           for (auto it = usertable.begin(); it != usertable.end(); it++) {
@@ -113,6 +140,10 @@ int main(int argc, char** argv) {
           }
         } else {
           //TODO: save to text file
+          std::thread twrite(write_to_file, target+".log",
+                            msg.msg.substr(pos1+1, msg.msg.size()));
+          twrite.detach();
+          //write_to_file(target+".log", msg.msg.substr(pos1+1, msg.msg.size()));
           udp.SendTo(msg.ip.c_str(), msg.port, "ACK");
         }
       }
@@ -154,12 +185,20 @@ int main(int argc, char** argv) {
             std::cerr << "warning: you're already online " << target
                       << std::endl << ">>> " << std::flush;
             goto clearevent;
-          } else if (target != nickname) {
-            std::cerr << "warning: invalid nickname " << target << std::endl
-                      << ">>> " << std::flush;
-            goto clearevent;
-          }
+          }// else if (target != nickname) {
+          //  std::cerr << "warning: invalid nickname " << target << std::endl
+          //            << ">>> " << std::flush;
+          //  goto clearevent;
+          //}
           udp.SendTo(argv[3], servport, "REG:"+target);
+          if (udp.Listen(msg,1,0)) {
+            if (msg.msg == "ACK") {
+              std::cout << "[You have messages]\n>>> " << std::flush;
+            }
+            nickname = target;
+          } else {
+            std::cerr << "error: reg failed\n>>> " << std::flush;
+          }
           offline = false;
         }
         if (offline) goto clearevent;
