@@ -1,0 +1,140 @@
+CSEE 4199 Programming Assignment 1
+Yan-Song Chen, yc3240
+
+===============================================================================
+Test Case 1:
+
+server$ ./UdpChat -s 3333
+user1$ ./UdpChat -c Richard 127.0.0.1 3333 1234
+user2$ ./UdpChat -c Zach 127.0.0.1 3333 1235
+user3$ ./UdpChat -c Jake 127.0.0.1 3333 1236
+user1$ send Zach Hi Zach!
+user2$ send Jake Hi Jake!
+user3$ send Richard Hello Richard!
+user3$ send Zach Hello :)
+user1$ dereg Richard
+user2$ ./UdpChat -c Zach 127.0.0.1 3333 1235
+user3$ send Richard Let's hang out!!!!!
+user1$ reg Richard
+
+Result:
+user1
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> send Zach Hi Zach!
+>>> [Message received by Zach.]
+>>> Jake:  Hello Richard!
+>>> dereg Richard
+>>> [You are Offline. Bye.]
+>>> reg Richard
+>>> Zach:  <1529108636> Are you still there?
+>>> Jake:  <1529108699> Let's hang out!!!!!
+>>> 
+
+user2
+[Client table updated.]
+>>> >>> [Client table updated.]
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> Richard:  Hi Zach!
+>>> send Jake Hi Jake!
+>>> [Message received by Jake.]
+>>> Jake:  Hello :)
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> send Richard Are you still there?
+>>> [Richard is offline, message sent to server.]
+>>> [Messages received by the server and saved]
+>>> 
+
+user3
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> Zach:  Hi Jake!
+>>> send Richard Hello Richard!
+>>> [Message received by Richard.]
+>>> send Zach Hello :)
+>>> [Message received by Zach.]
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> send Richard Let's hang out!!!!!
+>>> [Richard is offline, message sent to server.]
+>>> [Messages received by the server and saved]
+>>> 
+
+===============================================================================
+Test Case 2:
+
+server$ ./UdpChat -s 3333
+user1$ ./UdpChat -c Ken 127.0.0.1 3333 6678
+user2$ ./UdpChat -c Yan 127.0.0.1 3333 9999
+user2$ dereg Yan
+server$ ctrl+c
+user1$ send Yan Hello!
+
+Result:
+user1
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> send Yan Hello!
+>>> [Yan is offline, message sent to server.]
+>>> [Server not responding]
+>>> [Exiting]
+
+user2
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> dereg Yan
+>>> [You are Offline. Bye.]
+>>> 
+
+===============================================================================
+Test Case 3:
+server$ ./UdpChat -s 3333
+user1$ ./UdpChat -c Ken 127.0.0.1 3333 6678
+user2$ ./UdpChat -c Yan 127.0.0.1 3333 9999
+user2$ dereg Yan
+user1$ send Yan Where are you?
+user1$ dereg Ken
+user1$ reg Yan
+user1$ send Ken Sorry Ken, my phone was dead...
+user2$ reg Ken
+
+Result:
+user1
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> send Yan Where are you?
+>>> [Yan is offline, message sent to server.]
+>>> [Messages received by the server and saved]
+>>> dereg Ken
+>>> [You are Offline. Bye.]
+>>> reg Yan
+>>> Ken:  <1529108910> Where are you?
+>>> send Ken Sorry Ken, my phone was dead...
+>>> [No ACK from Ken, message sent to server.]
+>>> [Messages received by the server and saved]
+>>>
+
+user2
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> dereg Yan
+>>> [You are Offline. Bye.]
+>>> reg Ken
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> Yan:  <1529108969> Sorry Ken, my phone was dead...
+>>>
