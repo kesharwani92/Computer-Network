@@ -134,7 +134,7 @@ int main(int argc, char** argv) {
         if (usertable[target].active) {
           udp.SendTo(msg.ip.c_str(), msg.port, "NAK");
           for (auto it = usertable.begin(); it != usertable.end(); it++) {
-            std::cout << it->first << ":" << it->second << std::endl;
+            //std::cout << it->first << ":" << it->second << std::endl;
 	          udp.SendTo(msg.ip.c_str(), msg.port,
                        "TABLE:" + it->first + ":" + __row_to_str(it->second));
           }
