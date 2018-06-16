@@ -4,26 +4,29 @@
 * Simple chat application.
 *
 * Author: Yan-Song Chen
-* Date  : Jun 6th, 2018
+* Date  : Jun 15th, 2018
 *******************************************************************************/
 #include <UdpChat.h>
 #include <thread>
 #include <sys/time.h>
 #include <fstream>
 
-// Shared memory
-bool proc_running = true;
+
 table_t usertable;
+
+// Shared memory for the client program
+bool proc_running = true;
 std::string usercmd;
 bool userevent = false;
 
+// Client's thread for user input
 void intepreter() {
   std::string msg;
   while (proc_running) {
     std::cout << ">>> " << std::flush;
     getline(std::cin, msg);
-    //std::cout << "echo " << usercmd << std::endl;
-    if (msg.empty()) continue;
+    if (msg.empty())
+      continue;
     usercmd = msg;
     userevent = true;
   }
@@ -31,8 +34,6 @@ void intepreter() {
 }
 
 void write_to_file(std::string filename, std::string msg) {
-  std::cout << "write to " << filename << std::endl;
-  std::cout << "content: " << msg << std::endl;
   std::ofstream file;
   file.open(filename,std::ios::out | std::ios::app);
   file << msg << std::endl;
@@ -42,7 +43,7 @@ void write_to_file(std::string filename, std::string msg) {
 
 int main(int argc, char** argv) {
   /****************************************************************************
-  ** Server side
+  ** The Server Program
   *****************************************************************************/
   if (std::string(argv[1]) == "-s") {
     if (argc < 2) {
@@ -52,13 +53,12 @@ int main(int argc, char** argv) {
     // Initialize udp socket
     uint16_t port = strtoul(argv[2], nullptr, 0);
     UdpSocket udp(port);
-    std::cout << "Server mode" << std::endl;
 
     while (true) {
       udpmsg_t msg;
       udp.Listen(msg);
-      std::cout << "Receive msg from " << msg.ip << ':';
-      std::cout << msg.port << std::endl << msg.msg << std::endl;
+      std::cout << "Receive msg from " << msg.ip << ':'
+                << msg.port << std::endl << msg.msg << std::endl;
 
       size_t delim = msg.msg.find(':');
       if (msg.msg.substr(0, delim) == "NEWUSER") {
@@ -91,6 +91,7 @@ int main(int argc, char** argv) {
           continue;
         }
         usertable[target].active = false;
+        // Publish the table entry to all users
         for (auto it = usertable.begin(); it != usertable.end(); it++) {
           std::cout << it->first << ":" << it->second << std::endl;
           udp.SendTo(it->second.ip.c_str(), it->second.port,
@@ -103,9 +104,20 @@ int main(int argc, char** argv) {
           std::cout << "warning: " << target << " doesn't exist" << std::endl;
           continue;
         }
+
+        // Update the user's table entry
         usertable[target].active = true;
         usertable[target].ip = msg.ip;
         usertable[target].port = msg.port;
+
+        // Publish the table to the comeback user
+        for (auto it = usertable.begin(); it != usertable.end(); it++) {
+          std::cout << it->first << ":" << it->second << std::endl;
+          udp.SendTo(msg.ip.c_str(), msg.port,
+                     "TABLE:" + it->first + ":" + __row_to_str(it->second));
+        }
+
+        // Check offline messages
         std::ifstream f((target+".log").c_str());
         if (f.good() && f.is_open()) {
           std::string line;
@@ -116,11 +128,13 @@ int main(int argc, char** argv) {
                      "MSG:"+line);
           }
           f.close();
+
           if (remove((target+".log").c_str())) {
             std::cerr << "error: remove operation failed" << std::endl;
             std::cerr << strerror(errno) << std::endl;
           }
         } else {
+          // No offline message, confirm REG by NAK
           udp.SendTo(usertable[target].ip.c_str(), usertable[target].port,
                      "NAK");
         }
@@ -133,17 +147,15 @@ int main(int argc, char** argv) {
         }
         if (usertable[target].active) {
           udp.SendTo(msg.ip.c_str(), msg.port, "NAK");
+          // Send the whole table to the user who sent the offline message
           for (auto it = usertable.begin(); it != usertable.end(); it++) {
-            //std::cout << it->first << ":" << it->second << std::endl;
 	          udp.SendTo(msg.ip.c_str(), msg.port,
                        "TABLE:" + it->first + ":" + __row_to_str(it->second));
           }
         } else {
-          //TODO: save to text file
           std::thread twrite(write_to_file, target+".log",
                             msg.msg.substr(pos1+1, msg.msg.size()));
           twrite.detach();
-          //write_to_file(target+".log", msg.msg.substr(pos1+1, msg.msg.size()));
           udp.SendTo(msg.ip.c_str(), msg.port, "ACK");
         }
       }
@@ -185,11 +197,8 @@ int main(int argc, char** argv) {
             std::cerr << "warning: you're already online " << target
                       << std::endl << ">>> " << std::flush;
             goto clearevent;
-          }// else if (target != nickname) {
-          //  std::cerr << "warning: invalid nickname " << target << std::endl
-          //            << ">>> " << std::flush;
-          //  goto clearevent;
-          //}
+          }
+
           udp.SendTo(argv[3], servport, "REG:"+target);
           if (udp.Listen(msg,1,0)) {
             if (msg.msg == "ACK") {
@@ -227,6 +236,9 @@ int main(int argc, char** argv) {
                       << ", message sent to server.]" << std::endl
                       << ">>> " << std::flush;
           }
+// Under two conditions will we go to offilne_msg
+// 1. The user sends a message but not ACKed.
+// 2. The local table indicates that the target client is offline
 offline_msg:
           struct timeval timestamp;
           if (gettimeofday(&timestamp, nullptr) == -1) {
@@ -273,6 +285,8 @@ offline_msg:
           std::cout << "[Server not responding]\n>>> [Exiting]" << std::endl;
           exit(1);
         }
+// clearevent is the end of a user event (user input), and clears the 
+// userevent flag.
 clearevent:
         userevent = false;
       }
@@ -299,7 +313,7 @@ clearevent:
     tin.join();
   } else {
     std::cout << "warning: unknown argument " << argv[1] << std::endl;
-    return 1;
+    exit(1);
   }
   return 0;
 }
