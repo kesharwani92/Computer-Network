@@ -4,7 +4,7 @@
 * Defines structs and classes for the simple chat application.
 *
 * Author: Yan-Song Chen
-* Date  : Jun 6th, 2018
+* Date  : Jun 15th, 2018
 *******************************************************************************/
 #include <unordered_map>
 #include <string>
@@ -94,7 +94,8 @@ public:
     myaddr_.sin_addr.s_addr = htonl(INADDR_ANY);
     myaddr_.sin_port = htons(port);
     int option = 1;
-    if (setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option)) == -1) {
+    if (setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR,
+                   &option, sizeof(option)) == -1) {
       std::cerr << "error: setsocketopt failed" << std::endl;
       exit(1);
     }
@@ -142,9 +143,11 @@ public:
              ntohs(clntaddr_.sin_port),
              std::string((char*) buf_, ret)};
       return true;
-    } else if (errno == EAGAIN || errno == EWOULDBLOCK ) {// Timeout
-      //std::cout << "warning: timeout!!" << std::endl;
+
+    // Timeout! 
+    } else if (errno == EAGAIN || errno == EWOULDBLOCK ) {
       return false;
+    // Anything beyond EAGAIN or EWOULDBOCK is considered an error
     } else {
       std::cerr << "error: recvfrom failed" << std::endl;
       std::cerr << "error: " <<  strerror(errno);
@@ -156,7 +159,9 @@ private:
   static const size_t BUFSIZE = 2048;
   int fd_;
   struct sockaddr_in myaddr_;
-  struct sockaddr_in clntaddr_; // Target addr (talker), sender addr (listener)
+  // clntaddr_ stores target addr in SendTo(),
+  // and stores sender addr in Listen()
+  struct sockaddr_in clntaddr_;
   socklen_t addrlen_ = sizeof(clntaddr_);
   unsigned char buf_[BUFSIZE];
 };

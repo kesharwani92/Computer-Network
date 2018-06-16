@@ -5,20 +5,20 @@ Yan-Song Chen, yc3240
 Test Case 1:
 
 server$ ./UdpChat -s 3333
-user1$ ./UdpChat -c Richard 127.0.0.1 3333 1234
-user2$ ./UdpChat -c Zach 127.0.0.1 3333 1235
-user3$ ./UdpChat -c Jake 127.0.0.1 3333 1236
-user1$ send Zach Hi Zach!
-user2$ send Jake Hi Jake!
-user3$ send Richard Hello Richard!
-user3$ send Zach Hello :)
-user1$ dereg Richard
-user2$ ./UdpChat -c Zach 127.0.0.1 3333 1235
-user3$ send Richard Let's hang out!!!!!
-user1$ reg Richard
+terminal1$ ./UdpChat -c Richard 127.0.0.1 3333 1234
+terminal2$ ./UdpChat -c Zach 127.0.0.1 3333 1235
+terminal3$ ./UdpChat -c Jake 127.0.0.1 3333 1236
+terminal1$ send Zach Hi Zach!
+terminal2$ send Jake Hi Jake!
+terminal3$ send Richard Hello Richard!
+terminal3$ send Zach Hello :)
+terminal1$ dereg Richard
+terminal2$ ./UdpChat -c Zach 127.0.0.1 3333 1235
+terminal3$ send Richard Let's hang out!!!!!
+terminal1$ reg Richard
 
 Result:
-user1
+terminal1
 >>> [Client table updated.]
 >>> [Client table updated.]
 >>> [Client table updated.]
@@ -33,7 +33,7 @@ user1
 >>> Jake:  <1529108699> Let's hang out!!!!!
 >>> 
 
-user2
+terminal2
 [Client table updated.]
 >>> >>> [Client table updated.]
 >>> [Client table updated.]
@@ -49,7 +49,7 @@ user2
 >>> [Messages received by the server and saved]
 >>> 
 
-user3
+terminal3
 >>> [Client table updated.]
 >>> [Client table updated.]
 >>> [Client table updated.]
@@ -70,14 +70,14 @@ user3
 Test Case 2:
 
 server$ ./UdpChat -s 3333
-user1$ ./UdpChat -c Ken 127.0.0.1 3333 6678
-user2$ ./UdpChat -c Yan 127.0.0.1 3333 9999
-user2$ dereg Yan
+terminal1$ ./UdpChat -c Ken 127.0.0.1 3333 6678
+terminal2$ ./UdpChat -c Yan 127.0.0.1 3333 9999
+terminal2$ dereg Yan
 server$ ctrl+c
-user1$ send Yan Hello!
+terminal1$ send Yan Hello!
 
 Result:
-user1
+terminal1
 >>> [Client table updated.]
 >>> [Client table updated.]
 >>> [Client table updated.]
@@ -88,7 +88,7 @@ user1
 >>> [Server not responding]
 >>> [Exiting]
 
-user2
+terminal2
 >>> [Client table updated.]
 >>> [Client table updated.]
 >>> [Client table updated.]
@@ -99,17 +99,20 @@ user2
 ===============================================================================
 Test Case 3:
 server$ ./UdpChat -s 3333
-user1$ ./UdpChat -c Ken 127.0.0.1 3333 6678
-user2$ ./UdpChat -c Yan 127.0.0.1 3333 9999
-user2$ dereg Yan
-user1$ send Yan Where are you?
-user1$ dereg Ken
-user1$ reg Yan
-user1$ send Ken Sorry Ken, my phone was dead...
-user2$ reg Ken
+terminal1$ ./UdpChat -c Ken 127.0.0.1 3333 6678
+terminal2$ ./UdpChat -c Yan 127.0.0.1 3333 9999
+terminal2$ dereg Yan
+terminal1$ send Yan Where are you?
+terminal1$ dereg Ken
+terminal1$ reg Yan
+terminal1$ send Ken Sorry Ken, my phone was dead...
+terminal2$ reg Ken
+terminal2$ send Yan No worries.
+terminal1$ send Ken Thanks :D
+terminal1$ send Ken Thanks :D
 
 Result:
-user1
+terminal1
 >>> [Client table updated.]
 >>> [Client table updated.]
 >>> [Client table updated.]
@@ -121,13 +124,23 @@ user1
 >>> dereg Ken
 >>> [You are Offline. Bye.]
 >>> reg Yan
->>> Ken:  <1529108910> Where are you?
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> Ken:  <1529114205> Where are you?
 >>> send Ken Sorry Ken, my phone was dead...
->>> [No ACK from Ken, message sent to server.]
+>>> [Ken is offline, message sent to server.]
 >>> [Messages received by the server and saved]
+>>> Ken:  No worries.
+>>> send Ken Thanks :D
+>>> [Ken is offline, message sent to server.]
+>>> [Client Ken exists!!]
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> send Ken Thanks :D
+>>> [Message received by Ken.]
 >>>
 
-user2
+terminal2
 >>> [Client table updated.]
 >>> [Client table updated.]
 >>> [Client table updated.]
@@ -136,5 +149,10 @@ user2
 >>> reg Ken
 >>> [Client table updated.]
 >>> [Client table updated.]
->>> Yan:  <1529108969> Sorry Ken, my phone was dead...
->>>
+>>> [Client table updated.]
+>>> [Client table updated.]
+>>> Yan:  <1529114233> Sorry Ken, my phone was dead...
+>>> send Yan No worries.
+>>> [Message received by Yan.]
+>>> Yan:  Thanks :D
+>>> 

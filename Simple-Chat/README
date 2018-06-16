@@ -1,0 +1,48 @@
+CSEE4119 Programming Assignment 1
+Yan-Song Chen, yc3240
+
+1. Build and run
+$ make
+$ ./UdpChat -s 3333                    # invoke the server program
+$ ./UdpChat -c Yan 127.0.0.1 3333 1235 # invoke the client at separate terminal
+
+2. Assumptions
+2-1. No duplicate user nickname.
+2-2. No duplicate port.
+2-3. The user knows the IP as well as the port of the server.
+2-4. The user doesn't send themselves messages.
+2-5. The user can only deregister himself/herself.
+
+3. Data Structures
+
+3-1. Table Representation
+The table is stored in unordered_map<string, entry_t>. The key is the nickname.
+entry_t is a struct consisting of ip, port, and active marker.
+
+3-2. UDP Message
+From the header of UDP datagram, we can acquire sender information. Therefore,
+udpmsg_t is the container to store all the information. It is also my standard
+output of the Listen method.
+
+3-3. Udp Socket
+The low-level C socket functions were encapsulated into class UdpSocket. This
+class will bind the port number assigned on construction, under the assumption
+that a port will belong to a client at a time.
+The first method is SendTo, which is very straightforward; the second method is
+Listen. The caller can assign the wait time, and the method return false on 
+a timeout event. Additionally, error handling mechanisms are also implemented
+to help debugging.
+I use this class to program this assignment, as it allows me to focus on 
+higher-level tasks.
+
+4. Test Cases and Features
+test.txt was run on both Google Cloud Virtual Machine and my Ubuntu 16.04 
+Machine, and the results shows my output from my Ubuntu local machine.
+
+Following the instruction, case 1 and 2 proved that I meet the specifications.
+
+Case 3 demonstrates that my program allows user to switch terminals despite
+the assumption that a port can only be used by a user. Once an user 
+deregisters, the obsolete terminal can register anther offline user. Please
+note that user "Yan" was created on terminal 2 but ended up register at 
+terminal 1, and vice versa for "Ken".
