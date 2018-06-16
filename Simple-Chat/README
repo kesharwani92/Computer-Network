@@ -2,11 +2,17 @@ CSEE4119 Programming Assignment 1
 Yan-Song Chen, yc3240
 
 1. Build and run
+Dear TA, I apologize that I use g++ because I used a lot of C++11 features. It
+was too late for me to make it compatible with gcc. I personally installed
+g++ on Google Cloud Virtual Machine by the following:
+$ sudo apt install g++
+
+To compile the source code, please execute the following:
 $ make
 $ ./UdpChat -s 3333                    # invoke the server program
 $ ./UdpChat -c Yan 127.0.0.1 3333 1235 # invoke the client at separate terminal
 
-To recomplie, you have to remove .o files first
+To recomplie, you have to remove .o files first.
 $ make clean
 
 2. Assumptions
