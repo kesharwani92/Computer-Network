@@ -6,12 +6,14 @@ $ make
 $ ./UdpChat -s 3333                    # invoke the server program
 $ ./UdpChat -c Yan 127.0.0.1 3333 1235 # invoke the client at separate terminal
 
+To recomplie, you have to remove .o files first
+$ make clean
+
 2. Assumptions
 2-1. No duplicate user nickname.
 2-2. No duplicate port.
 2-3. The user knows the IP as well as the port of the server.
 2-4. The user doesn't send themselves messages.
-2-5. The user can only deregister himself/herself.
 
 3. Data Structures
 

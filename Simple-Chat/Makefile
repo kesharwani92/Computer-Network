@@ -4,7 +4,7 @@ CFLAGS=-std=c++11 -Wall -g
 INCS=include
 SRCS=src/UdpChat.cc
 
-all: clean compile
+all: compile
 
 compile: UdpChat.o
 	$(CXX) -o UdpChat UdpChat.o -lpthread
