@@ -3,6 +3,8 @@
 #include <atomic>
 #include <string>
 #include <queue>
+#include <setjmp.h>
+#include <signal.h>
 #define GBNNODE_DEBUG 1 // Debugging mode
 
 // Shared memory accross threads
@@ -60,13 +62,48 @@ void cin_proc() {
   }
 }
 
-#ifndef CHECK_TIMEOUT
-#define CHECK_TIMEOUT(base, ms) if (std::chrono::high_resolution_clock::now()\
-    - base < std::chrono::milliseconds(ms)) goto timeout_phase;
-#endif
-#ifndef RESET_TIMER
-#define RESET_TIMER(base) base = std::chrono::high_resolution_clock::now();
-#endif
+static jmp_buf env;
+void __timeout_handler(int signo) {
+  std::cout << "oops: timeout!" << std::endl;
+  longjmp(env, ETIME); // timeout errno
+}
+
+// Implementation of GBN Finite State Machine
+void gbn_fsm(const std::string& buf, const int& window) {
+  size_t base = 0, nextseq = 0;
+  struct sigaction sa;
+  sa.sa_handler = &__timeout_handler;
+    sigaction (SIGALRM, &sa, 0);
+  ualarm(500000, 0);
+  if (!setjmp(env)) {
+    // State 1:
+    for (; nextseq < base + window && nextseq < buf.size(); nextseq++) {
+      std::string msg = std::to_string(nextseq) + ":" + buf[nextseq];
+      __send(msg);
+    }
+
+    if (acklock.test_and_set(std::memory_order_acquire)) {
+      base = ack + 1;
+      if (base == nextseq) {
+        __release_lock(acklock);
+        ualarm(500000, 0);
+        longjmp(env, 0);
+      } else if (base == buf.size()) {
+        __release_lock(acklock);
+        ualarm(0, 0); // on Linux, setting zero will cancel the alarm
+        return;
+      }
+      __release_lock(acklock);
+    }
+  } else {
+    for (size_t i = base; i < nextseq; i++) {
+      std::string msg = std::to_string(nextseq) + ":" + buf[nextseq];
+      __send(msg);
+    }
+    ualarm(500000, 0);
+    longjmp(env, 0);
+  }
+}
 // Pops out the top message and send it over UDP
 void gbn_proc(const int& window) {
   while (proc_running) {
@@ -79,44 +116,7 @@ void gbn_proc(const int& window) {
     #endif
     messages.pop();
     __release_lock(msglock);
-    
-    // Finite State Machine
-    size_t base = 0, nextseq = 0;
-    // TODO: use chrono timer
-    auto timebase = std::chrono::high_resolution_clock::now();
-
-send_phase:
-    CHECK_TIMEOUT(timebase,500);
-    for (; nextseq < base + window && nextseq < buf.size(); nextseq++) {
-      std::string msg = std::to_string(nextseq) + ":" + buf[nextseq];
-      __send(msg);
-    }
-
-recvack_phase:
-    CHECK_TIMEOUT(timebase,500);
-    if (acklock.test_and_set(std::memory_order_acquire)) {
-      base = ack + 1;
-      if (base == nextseq) {
-        RESET_TIMER(timebase);
-        __release_lock(acklock);
-        goto send_phase;
-      } else if (base == buf.size()) {
-        __release_lock(acklock);
-        goto finish_phase;
-      }
-      __release_lock(acklock);
-    }
-    goto send_phase;
-
-timeout_phase:
-    for (size_t i = base; i < nextseq; i++) {
-      std::string msg = std::to_string(nextseq) + ":" + buf[nextseq];
-      __send(msg);
-    }
-    RESET_TIMER(timebase);
-    goto send_phase;
-
-finish_phase:
+    gbn_fsm(buf, window);
     std::string msg = "end";
     __send(msg);
   } // End of while (proc_running)
