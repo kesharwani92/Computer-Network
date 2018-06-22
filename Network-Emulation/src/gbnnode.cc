@@ -52,7 +52,7 @@ void cin_proc() {
     size_t delim = line.find(' ');
     if (line.substr(0, delim) != "send") {
       #if GBNNODE_DEBUG
-      std::cerr << "warning: support only send operation" << std::endl;
+      MY_ERROR_STREAM << "warning: support only send operation" << std::endl;
       #endif
       continue;
     }
@@ -60,8 +60,7 @@ void cin_proc() {
     std::string message = line.substr(delim+1, line.size()-delim);
 
     #if GBNNODE_DEBUG
-    printmytime();
-    std::cout << "cin_proc: got " << message << std::endl;
+    MY_INFO_STREAM << "cin_proc: got " << message << std::endl;
     #endif
     __grab_lock(msglock);
     messages.push(message);
@@ -80,8 +79,7 @@ void gbn_proc(const int& window) {
     __grab_lock(msglock);
     std::string buf = messages.front();
     #if GBNNODE_DEBUG
-    printmytime();
-    std::cout << "gbn_proc: send " << buf << std::endl;
+    MY_INFO_STREAM << "gbn_proc: send " << buf << std::endl;
     #endif
     messages.pop();
     __release_lock(msglock);
@@ -90,55 +88,60 @@ void gbn_proc(const int& window) {
     __send(msg);
     std::cout << "[Summary] " << "packets dropped, loss rate = ??"
         << std::endl;
-  } // End of while (proc_running)
+  }
 }
 
 void __timeout_handler(int signo) {
-  std::cout << "oops: timeout!" << std::endl;
   longjmp(env, ETIME); // timeout errno
 }
 
 // Implementation of GBN Finite State Machine
 void __gbn_fsm(const std::string& buf, const int& window) {
   size_t base = 0, nextseq = 0;
-  for (nextseq = 0; nextseq < buf.size(); nextseq++) {
-    std::string msg = "SEQ:" + std::to_string(nextseq) + ":" + buf[nextseq];
-    __send(msg);
-  }
-  /*
+  //for (nextseq = 0; nextseq < buf.size(); nextseq++) {
+  //  std::string msg = "SEQ:" + std::to_string(nextseq) + ":" + buf[nextseq];
+  //  __send(msg);
+  //}
   struct sigaction sa;
   sa.sa_handler = &__timeout_handler;
   sigaction (SIGALRM, &sa, 0);
+  
   ualarm(500000, 0);
-  if (!setjmp(env)) {
-    // State 1:
+  int val = setjmp(env);
+  // NOTE: longjmp cannot parse val 0 to setjmp. 0 is for the first run.
+  if (val == 0 || val == 1) {
     for (; nextseq < base + window && nextseq < buf.size(); nextseq++) {
-      std::string msg = std::to_string(nextseq) + ":" + buf[nextseq];
+      std::string msg = "SEQ:" + std::to_string(nextseq) + ":" + buf[nextseq];
       __send(msg);
     }
 
-    if (acklock.test_and_set(std::memory_order_acquire)) {
-      base = ack + 1;
-      if (base == nextseq) {
-        __release_lock(acklock);
-        ualarm(500000, 0);
-        longjmp(env, 0);
-      } else if (base == buf.size()) {
-        __release_lock(acklock);
-        ualarm(0, 0); // on Linux, setting zero will cancel the alarm
-        return;
-      }
+check_ack:
+    __grab_lock(acklock);
+    base = ack + 1;
+    if (base == buf.size()) {
       __release_lock(acklock);
+      ualarm(0, 0); // on Linux, setting zero will cancel the alarm
+      return;
+    } else if (base == nextseq) {
+      __release_lock(acklock);
+      ualarm(500000, 0);
+      longjmp(env, 0);
     }
+    __release_lock(acklock);
+    goto check_ack;
   } else {
     for (size_t i = base; i < nextseq; i++) {
       std::string msg = std::to_string(nextseq) + ":" + buf[nextseq];
       __send(msg);
     }
     ualarm(500000, 0);
-    longjmp(env, 0);
+    longjmp(env, 1);
   }
-  */
+  #if GBNNODE_DEBUG
+  MY_ERROR_STREAM << "__gbn_fsm: something went wrong... shouldn't be here"
+      << std::endl;
+  ualarm(0, 0); 
+  #endif
 }
 
 // The main thread listens to the bound port
@@ -159,18 +162,20 @@ void recv_proc() {
       size_t pos0 = inmsg.find(':');
       if (inmsg.substr(0, pos0) == "ACK") {
         size_t pos1 = inmsg.find(':', pos0+1);
-        int ack = stoi(inmsg.substr(pos0+1, pos1-pos0-1));
-        printmytime();
-        std::cout << "ACK" << ack << " received, window moved to " << ack+1
-            << std::endl;
+        int newack = stoi(inmsg.substr(pos0+1, pos1-pos0-1));
+        MY_INFO_STREAM << "ACK" << newack << " received, window moved to "
+            << newack+1 << std::endl;
+        __grab_lock(acklock);
+        ack = newack;
+        __release_lock(acklock);
       } else if (inmsg.substr(0, pos0) == "SEQ"){
         size_t pos1 = inmsg.find(':', pos0+1);
         int seq = stoi(inmsg.substr(pos0+1, pos1-pos0-1));
-        printmytime();
-        std::cout << "packet " << seq << " received" << std::endl;
+        MY_INFO_STREAM << "packet " << seq << " received" << std::endl;
         std::string outmsg = "ACK:" + std::to_string(seq);
         __send(outmsg);
-        std::cout << "ACK" << seq << "sent, expecting " << seq+1 << std::endl;
+        MY_INFO_STREAM << "ACK" << seq << " sent, expecting " << seq+1
+            << std::endl;
       } else if (inmsg == "END") {
         std::cout << "[Summary] " << "packets discarded, loss rate = ??"
             << std::endl;
