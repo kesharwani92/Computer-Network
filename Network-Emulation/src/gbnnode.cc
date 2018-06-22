@@ -6,7 +6,7 @@
 #include <string>
 #include <queue>
 
-#define GBNNODE_DEBUG 0 // Debugging mode
+#define GBNNODE_DEBUG 1 // Debugging mode
 ////////////////////////////////////////////////////////////////////////////////
 // Move to gbnnode.h
 ////////////////////////////////////////////////////////////////////////////////
@@ -20,8 +20,8 @@ std::queue<std::string> messages;
 std::atomic_flag acklock = ATOMIC_FLAG_INIT; // lock for ACKs
 size_t ack;
 
-int fd;
-struct sockaddr_in src, dest;
+static int fd;
+static struct sockaddr_in src, dest;
 
 inline void __grab_lock(std::atomic_flag& lock) {
   while (lock.test_and_set(std::memory_order_acquire));
@@ -66,6 +66,18 @@ void cin_proc() {
     messages.push(message);
     __release_lock(msglock);
   }
+}
+
+// Packet-dropping manager
+static bool dropmode; // 1 for deterministic, 0 for probabilistic
+static int dropsum;
+static int dropn;
+static float dropprob;
+inline float rand_float() {
+  return static_cast<float>(rand()) / RAND_MAX;
+}
+bool drop_packet() {
+  return (dropmode) ? (++dropsum % dropn) == 0 : rand_float() > dropprob;
 }
 
 // The go-back-n protocol thread
@@ -190,13 +202,26 @@ void recv_proc() {
 
 int main(int argc, char** argv) {
   #if GBNNODE_DEBUG
-  std::cout << "Arguments" << "Window size = " << std::stoi(argv[1]) << std::endl
-      << "Source port: " << cstr_to_port(argv[2]) << std::endl
+  std::cout << "Arguments\n" << "Window size = " << std::stoi(argv[1])
+      << std::endl << "Source port: " << cstr_to_port(argv[2]) << std::endl
       << "Destination port: " << cstr_to_port(argv[3]) << std::endl;
   #endif
   const int window = std::stoi(argv[1]);
   set_udp_addr(src, cstr_to_port(argv[2]));
   set_udp_addr(dest, cstr_to_port(argv[3]));
+  if (std::string(argv[4]) == "-d") {
+    dropmode = true;
+    dropn = std::stoi(argv[5]);
+    std::cout << "deterministic mode / " << dropn << std::endl;
+  } else if (std::string(argv[4]) == "-p") {
+    dropmode = false;
+    dropprob = std::stof(argv[5]);
+    std::cout << "probabilistic mode / " << dropprob << std::endl;
+  } else {
+    MY_ERROR_STREAM << "error: invalid drop mode" << std::endl;
+    exit(1);
+  }
+
   initialize(fd, src);
   std::thread user_cin(cin_proc);
   std::thread send_gbn(gbn_proc, window);

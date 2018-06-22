@@ -8,7 +8,7 @@
 
 
 // Print specified time format
-inline void printmytime() {
+inline void __printmytime() {
 	struct timeval timestamp;
 	if (gettimeofday(&timestamp, nullptr) == -1) {
 		std::cerr << "error: gettimeofday() failed\n" << strerror(errno)
@@ -18,6 +18,9 @@ inline void printmytime() {
   timestamp.tv_usec = timestamp.tv_usec  % 1000; // us to ms
 	std::cout << '[' << timestamp.tv_sec << '.' << timestamp.tv_usec << "] ";
 }
+
+#define MY_INFO_STREAM __printmytime();std::cout
+#define MY_ERROR_STREAM __printmytime();std::cerr
 
 typedef uint16_t port_t;
 inline port_t cstr_to_port(char* cstr) { return strtoul(cstr, nullptr, 0);}
