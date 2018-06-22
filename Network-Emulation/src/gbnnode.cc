@@ -6,7 +6,7 @@
 #include <string>
 #include <queue>
 
-#define GBNNODE_DEBUG 1 // Debugging mode
+#define GBNNODE_DEBUG 0 // Debugging mode
 ////////////////////////////////////////////////////////////////////////////////
 // Move to gbnnode.h
 ////////////////////////////////////////////////////////////////////////////////
@@ -60,6 +60,7 @@ void cin_proc() {
     std::string message = line.substr(delim+1, line.size()-delim);
 
     #if GBNNODE_DEBUG
+    printmytime();
     std::cout << "cin_proc: got " << message << std::endl;
     #endif
     __grab_lock(msglock);
@@ -85,8 +86,10 @@ void gbn_proc(const int& window) {
     messages.pop();
     __release_lock(msglock);
     __gbn_fsm(buf, window);
-    std::string msg = "end";
+    std::string msg = "END";
     __send(msg);
+    std::cout << "[Summary] " << "packets dropped, loss rate = ??"
+        << std::endl;
   } // End of while (proc_running)
 }
 
@@ -98,6 +101,11 @@ void __timeout_handler(int signo) {
 // Implementation of GBN Finite State Machine
 void __gbn_fsm(const std::string& buf, const int& window) {
   size_t base = 0, nextseq = 0;
+  for (nextseq = 0; nextseq < buf.size(); nextseq++) {
+    std::string msg = "SEQ:" + std::to_string(nextseq) + ":" + buf[nextseq];
+    __send(msg);
+  }
+  /*
   struct sigaction sa;
   sa.sa_handler = &__timeout_handler;
   sigaction (SIGALRM, &sa, 0);
@@ -130,6 +138,7 @@ void __gbn_fsm(const std::string& buf, const int& window) {
     ualarm(500000, 0);
     longjmp(env, 0);
   }
+  */
 }
 
 // The main thread listens to the bound port
@@ -145,15 +154,27 @@ void recv_proc() {
       #if GBNNODE_DEBUG
       std::cout << "recv_proc: receive message - " << buf << std::endl;
       #endif
+      
       std::string inmsg(buf, ret);
       size_t pos0 = inmsg.find(':');
-      if (inmsg.substr(0, pos0) == "ack") {
-        // TODO: retrive sequence number
-      } else {
-        std::string outmsg = "ACK:" + inmsg.substr(pos0+1, inmsg.size());
-        // TODO: grab lock and change ack number
+      if (inmsg.substr(0, pos0) == "ACK") {
+        size_t pos1 = inmsg.find(':', pos0+1);
+        int ack = stoi(inmsg.substr(pos0+1, pos1-pos0-1));
+        printmytime();
+        std::cout << "ACK" << ack << " received, window moved to " << ack+1
+            << std::endl;
+      } else if (inmsg.substr(0, pos0) == "SEQ"){
+        size_t pos1 = inmsg.find(':', pos0+1);
+        int seq = stoi(inmsg.substr(pos0+1, pos1-pos0-1));
+        printmytime();
+        std::cout << "packet " << seq << " received" << std::endl;
+        std::string outmsg = "ACK:" + std::to_string(seq);
         __send(outmsg);
-      } 
+        std::cout << "ACK" << seq << "sent, expecting " << seq+1 << std::endl;
+      } else if (inmsg == "END") {
+        std::cout << "[Summary] " << "packets discarded, loss rate = ??"
+            << std::endl;
+      }
     } else {
       std::cerr << "error: recvfrom failed" << std::endl;
       std::cerr << "error: " <<  strerror(errno);
