@@ -1,12 +1,16 @@
 #include <common.h>
+#include <setjmp.h>
+#include <signal.h>
 #include <thread>
 #include <atomic>
 #include <string>
 #include <queue>
-#include <setjmp.h>
-#include <signal.h>
-#define GBNNODE_DEBUG 1 // Debugging mode
 
+#define GBNNODE_DEBUG 1 // Debugging mode
+////////////////////////////////////////////////////////////////////////////////
+// Move to gbnnode.h
+////////////////////////////////////////////////////////////////////////////////
+const size_t BUFSIZE = 2048;
 // Shared memory accross threads
 bool proc_running = true;
 
@@ -35,8 +39,10 @@ inline void __send(const std::string& msg) {
     throw std::exception();
   }
 }
-// Multi-threaded functions
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
+// The user input thread
 // Takes in command line input and process command type
 void cin_proc() {
   while (proc_running) {
@@ -62,18 +68,39 @@ void cin_proc() {
   }
 }
 
+// The go-back-n protocol thread
 static jmp_buf env;
+void __timeout_handler(int signo);
+void __gbn_fsm(const std::string& buf, const int& window);
+// Pops out the top message and send it over UDP
+void gbn_proc(const int& window) {
+  while (proc_running) {
+    if (messages.empty()) continue;
+    __grab_lock(msglock);
+    std::string buf = messages.front();
+    #if GBNNODE_DEBUG
+    printmytime();
+    std::cout << "gbn_proc: send " << buf << std::endl;
+    #endif
+    messages.pop();
+    __release_lock(msglock);
+    __gbn_fsm(buf, window);
+    std::string msg = "end";
+    __send(msg);
+  } // End of while (proc_running)
+}
+
 void __timeout_handler(int signo) {
   std::cout << "oops: timeout!" << std::endl;
   longjmp(env, ETIME); // timeout errno
 }
 
 // Implementation of GBN Finite State Machine
-void gbn_fsm(const std::string& buf, const int& window) {
+void __gbn_fsm(const std::string& buf, const int& window) {
   size_t base = 0, nextseq = 0;
   struct sigaction sa;
   sa.sa_handler = &__timeout_handler;
-    sigaction (SIGALRM, &sa, 0);
+  sigaction (SIGALRM, &sa, 0);
   ualarm(500000, 0);
   if (!setjmp(env)) {
     // State 1:
@@ -104,22 +131,35 @@ void gbn_fsm(const std::string& buf, const int& window) {
     longjmp(env, 0);
   }
 }
-// Pops out the top message and send it over UDP
-void gbn_proc(const int& window) {
+
+// The main thread listens to the bound port
+void recv_proc() {
+  struct sockaddr_in rcvaddr;
+  socklen_t addrlen = sizeof(rcvaddr);
+  char buf[BUFSIZE];
   while (proc_running) {
-    if (messages.empty()) continue;
-    __grab_lock(msglock);
-    std::string buf = messages.front();
-    #if GBNNODE_DEBUG
-    printmytime();
-    std::cout << "gbn_proc: send " << buf << std::endl;
-    #endif
-    messages.pop();
-    __release_lock(msglock);
-    gbn_fsm(buf, window);
-    std::string msg = "end";
-    __send(msg);
-  } // End of while (proc_running)
+    ssize_t ret = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr*)&rcvaddr,
+        &addrlen);
+    if (ret > 0) {
+      buf[ret] = 0;
+      #if GBNNODE_DEBUG
+      std::cout << "recv_proc: receive message - " << buf << std::endl;
+      #endif
+      std::string inmsg(buf, ret);
+      size_t pos0 = inmsg.find(':');
+      if (inmsg.substr(0, pos0) == "ack") {
+        // TODO: retrive sequence number
+      } else {
+        std::string outmsg = "ACK:" + inmsg.substr(pos0+1, inmsg.size());
+        // TODO: grab lock and change ack number
+        __send(outmsg);
+      } 
+    } else {
+      std::cerr << "error: recvfrom failed" << std::endl;
+      std::cerr << "error: " <<  strerror(errno);
+      throw std::exception();
+    }
+  }
 }
 
 int main(int argc, char** argv) {
@@ -134,6 +174,7 @@ int main(int argc, char** argv) {
   initialize(fd, src);
   std::thread user_cin(cin_proc);
   std::thread send_gbn(gbn_proc, window);
+  recv_proc();
   user_cin.join();
   send_gbn.join();
   close(fd);
