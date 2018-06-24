@@ -195,11 +195,15 @@ void recv_proc() {
       if (inmsg.substr(0, pos0) == "ACK") {
         size_t pos1 = inmsg.find(':', pos0+1);
         int newack = stoi(inmsg.substr(pos0+1, pos1-pos0-1));
-        MY_INFO_STREAM << "ACK" << newack << " received, window moved to "
-            << newack+1 << std::endl;
-        __grab_lock(acklock);
-        ack = newack;
-        __release_lock(acklock);
+        if (drop_packet()) {
+          MY_INFO_STREAM << "ACK" << newack << " discarded" << std::endl;
+        } else {
+          MY_INFO_STREAM << "ACK" << newack << " received, window moved to "
+              << newack+1 << std::endl;
+          __grab_lock(acklock);
+          ack = newack;
+          __release_lock(acklock);
+        }
       } else if (inmsg.substr(0, pos0) == "SEQ"){
         size_t pos1 = inmsg.find(':', pos0+1);
         int seq = stoi(inmsg.substr(pos0+1, pos1-pos0-1));
@@ -207,7 +211,6 @@ void recv_proc() {
           MY_INFO_STREAM << "packet" << seq << ' ' << inmsg[pos1+1]
               << " discarded" << std::endl;
         } else if (seq == expected) {
-          
           MY_INFO_STREAM << "packet " << seq << ' ' << inmsg[pos1+1]
               << " received" << std::endl;
           std::string outmsg = "ACK:" + std::to_string(expected);
