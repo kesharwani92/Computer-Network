@@ -1,12 +1,11 @@
 #include <common.h>
-#include <setjmp.h>
 #include <signal.h>
 #include <thread>
 #include <atomic>
 #include <string>
 #include <queue>
 
-#define GBNNODE_DEBUG 0 // Debugging mode
+#define GBNNODE_DEBUG 1 // Debugging mode
 ////////////////////////////////////////////////////////////////////////////////
 // Move to gbnnode.h
 ////////////////////////////////////////////////////////////////////////////////
@@ -107,7 +106,6 @@ void gbn_proc(const int& window) {
 bool __timeout_flag;
 void __timeout_handler(int signo) {
   MY_INFO_STREAM << "timeout" << std::endl;
-  //longjmp(env, ETIME); // timeout errno
   __timeout_flag = true;
 }
 
@@ -119,8 +117,6 @@ void __gbn_fsm(const std::string& buf, const int& window) {
   sigaction (SIGALRM, &sa, 0);
   __timeout_flag = false;
   ualarm(500000, 0);
-  //int val = setjmp(env);
-  // NOTE: longjmp cannot parse val 0 to setjmp. 0 is for the first run.
 send_state:
   if (__timeout_flag) goto timeout_state;
   for (; nextseq < base + window -1 && nextseq < buf.size(); nextseq++) {
@@ -131,15 +127,18 @@ send_state:
   }
 chkack_state:
   __grab_lock(acklock);
+  //if (ack < base + window -1) base = ack + 1;
   base = ack + 1;
   if (base == buf.size()) {
     __release_lock(acklock);
     ualarm(0, 0); // on Linux, setting zero will cancel the alarm
+    __grab_lock(acklock);
+    ack = 0;
+    __release_lock(acklock);
     return;
   } else if (base == nextseq) {
     __release_lock(acklock);
     ualarm(500000, 0);
-    //longjmp(env, 0);
     goto send_state;
   }
   __release_lock(acklock);
@@ -152,9 +151,6 @@ timeout_state:
     std::string msg = "SEQ:" + std::to_string(i) + ":" + buf[i];
     __send(msg);
     MY_INFO_STREAM << "packet" << i << ' ' << buf[i] << " sent" << std::endl;
-    #if GBNNODE_DEBUG
-    std::cout << "resend " << msg << std::endl;
-    #endif
   }
   ualarm(500000, 0);
   __timeout_flag = false;
@@ -174,6 +170,7 @@ void recv_proc() {
   struct sockaddr_in rcvaddr;
   socklen_t addrlen = sizeof(rcvaddr);
   char buf[BUFSIZE];
+  ack = 0;
   while (proc_running) {
     //ssize_t ret = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr*)&rcvaddr,
     //    &addrlen);
@@ -229,6 +226,9 @@ void recv_proc() {
 
       } else if (inmsg == "END") {
         expected = 0;
+        __grab_lock(acklock);
+        ack = 0;
+        __release_lock(acklock);
         std::cout << "[Summary] " << "packets discarded, loss rate = ??"
             << std::endl;
       }
