@@ -5,7 +5,8 @@
 #include <iostream>
 #include <exception>
 #include <arpa/inet.h>
-
+#include <atomic>
+const size_t BUFSIZE = 2048;
 
 // Print specified time format
 inline void __printmytime() {
@@ -51,6 +52,23 @@ void initialize(int& fd, struct sockaddr_in& myaddr) {
   if (bind(fd, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
     std::cerr << "error: bind failed" << std::endl;
     std::cerr << "error: " << strerror(errno) << std::endl;
+    throw std::exception();
+  }
+}
+
+inline void grab_lock(std::atomic_flag& lock) {
+  while (lock.test_and_set(std::memory_order_acquire));
+}
+
+inline void release_lock(std::atomic_flag& lock) {
+  lock.clear(std::memory_order_release);
+}
+
+inline void udpsend(int fd, struct sockaddr_in& dest, const std::string& msg) {
+  if (sendto(fd, msg.c_str(), msg.size(), 0, (struct sockaddr *)&dest,
+      sizeof(dest)) < 0) {
+    MY_ERROR_STREAM << "error: failed while sending " << msg << std::endl;
+    MY_ERROR_STREAM << "error: " << strerror(errno) << std::endl;
     throw std::exception();
   }
 }
