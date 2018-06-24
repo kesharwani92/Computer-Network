@@ -5,7 +5,7 @@
 #include <string>
 #include <queue>
 
-#define GBNNODE_DEBUG 1 // Debugging mode
+#define GBNNODE_DEBUG 0 // Debugging mode
 ////////////////////////////////////////////////////////////////////////////////
 // Move to gbnnode.h
 ////////////////////////////////////////////////////////////////////////////////
@@ -52,17 +52,10 @@ void cin_proc() {
 
     size_t delim = line.find(' ');
     if (line.substr(0, delim) != "send") {
-      #if GBNNODE_DEBUG
-      std::cout << "warning: support only send operation" << std::endl;
-      #endif
+      MY_ERROR_STREAM << "warning: support only send operation" << std::endl;
       continue;
     }
-
     std::string message = line.substr(delim+1, line.size()-delim);
-
-    #if GBNNODE_DEBUG
-    std::cout << "cin_proc: got " << message << std::endl;
-    #endif
     __grab_lock(msglock);
     messages.push(message);
     __release_lock(msglock);
@@ -78,7 +71,7 @@ inline float rand_float() {
   return static_cast<float>(rand()) / RAND_MAX;
 }
 bool drop_packet() {
-  return (dropmode) ? (++dropsum % dropn) == 0 : rand_float() > dropprob;
+  return (dropmode) ? (++dropsum % dropn) == 0 : rand_float() < dropprob;
 }
 
 // The go-back-n protocol thread
@@ -127,7 +120,6 @@ send_state:
   }
 chkack_state:
   __grab_lock(acklock);
-  //if (ack < base + window -1) base = ack + 1;
   base = ack + 1;
   if (base == buf.size()) {
     __release_lock(acklock);
@@ -144,9 +136,6 @@ chkack_state:
   __release_lock(acklock);
   goto send_state;
 timeout_state:
-  #if GBNNODE_DEBUG
-  std::cout << "resend " << base << " to " << nextseq << std::endl;
-  #endif
   for (size_t i = base; i < nextseq && i < buf.size(); i++) {
     std::string msg = "SEQ:" + std::to_string(i) + ":" + buf[i];
     __send(msg);
@@ -172,15 +161,9 @@ void recv_proc() {
   char buf[BUFSIZE];
   ack = 0;
   while (proc_running) {
-    //ssize_t ret = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr*)&rcvaddr,
-    //    &addrlen);
     ssize_t ret;
     while ((ret = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr*)&rcvaddr,
             &addrlen)) == -1 && errno == EINTR);
-    //if (errno == EINTR) {
-    //  std::cout << "ignore alarm siganl, call recvfrom again." << std::endl;
-    //  continue;
-    //}
     if (ret > 0) {
       buf[ret] = 0;
       #if GBNNODE_DEBUG
@@ -235,7 +218,7 @@ void recv_proc() {
     } else {
       std::cerr << "error: recvfrom failed" << std::endl;
       std::cerr << "error: " <<  strerror(errno) << std::endl;
-      //throw std::exception();
+      throw std::exception();
     }
   }
 }
