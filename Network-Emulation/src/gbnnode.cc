@@ -1,7 +1,6 @@
 #include <common.h>
 #include <signal.h>
 #include <thread>
-
 #include <string>
 #include <queue>
 
@@ -18,6 +17,10 @@ static struct sockaddr_in src, dest;
 
 std::atomic_flag acklock = ATOMIC_FLAG_INIT; // lock for ACKs
 size_t ack = 0;
+
+// Cumulative statistics regarding the link loss rate
+static int numpkt = 0;
+static int dropcnt = 0;
 
 // The user input thread
 // Takes in command line input and process command type
@@ -41,7 +44,6 @@ void cin_proc() {
 // Packet-dropping manager
 static bool dropmode; // 1 for deterministic, 0 for probabilistic
 static int dropsum;
-static int dropcount;
 static int dropn;
 static float dropprob;
 inline float rand_float() {
@@ -133,7 +135,8 @@ timeout_state:
 finish_fsm:
   std::string msg = "END";
   udpsend(fd, dest, msg);
-  std::cout << "[Summary] " << "packets dropped, loss rate = ??"
+  std::cout << "[Summary] " << dropcnt << '/' << numpkt
+      << "packets dropped, loss rate = " << static_cast<float>(dropcnt)/numpkt
       << std::endl;
 }
 
@@ -161,9 +164,10 @@ void recv_proc() {
         size_t pos1 = inmsg.find(':', pos0+1);
         int newack = stoi(inmsg.substr(pos0+1, pos1-pos0-1));
         if (drop_packet()) {
-          dropcount++;
+          dropcnt++;
           MY_INFO_STREAM << "ACK" << newack << " discarded" << std::endl;
         } else {
+          numpkt++;
           MY_INFO_STREAM << "ACK" << newack << " received, window moved to "
               << newack+1 << std::endl;
           grab_lock(acklock);
@@ -174,7 +178,7 @@ void recv_proc() {
         size_t pos1 = inmsg.find(':', pos0+1);
         int seq = stoi(inmsg.substr(pos0+1, pos1-pos0-1));
         if (drop_packet()) {
-          dropcount++;
+          dropcnt++;
           MY_INFO_STREAM << "packet" << seq << ' ' << inmsg[pos1+1]
               << " discarded" << std::endl;
         } else if (seq == expected) {
@@ -185,6 +189,7 @@ void recv_proc() {
           MY_INFO_STREAM << "ACK" << expected << " sent, expecting " 
               << expected+1 << std::endl;
           expected++;
+          numpkt++;
         } else {
           MY_INFO_STREAM << "packet " << seq << ' ' << inmsg[pos1+1]
               << " received" << std::endl;
@@ -199,9 +204,9 @@ void recv_proc() {
         grab_lock(acklock);
         ack = 0;
         release_lock(acklock);
-        std::cout << "[Summary] " << "? / ?"
-            << "packets discarded, loss rate = "
-            << "??" << std::endl;
+        std::cout << "[Summary] " << dropcnt << '/' << numpkt
+            << "packets dropped, loss rate = "
+            << static_cast<float>(dropcnt)/numpkt << std::endl;
       }
     } else {
       MY_ERROR_STREAM << "error: recvfrom failed" << std::endl;
