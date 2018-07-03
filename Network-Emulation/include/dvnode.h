@@ -1,59 +1,61 @@
 #include <common.h>
 #include <myudp.h>
 #include <unordered_map>
-#include <set>
 #include <sstream>
 
 #ifndef DVNODE_H
 #define DVNODE_H
-
 typedef std::unordered_map<port_t, float> dv_t;
+const char pairDelim = ',';
+const char entryDelim = ':';
 
-class DVTable {
-public:
-  DVTable(port_t x):id_(x){};
-  DVTable(std::string s, char d1, char d2);
-  std::string DVStr();                    // TODO: Overload std::to_string()
-  bool Insert(port_t x, dv_t v); // TODO: Overload [] operator
-  bool Update();                        // Implement Bellman-Ford algorithm
-  //friend std::ostream& operator << (std::ostream&, const DVTable&);
-  friend std::ostream& operator << (std::ostream& os, const DVTable& t);  
-private:
-  const port_t id_;
-  dv_t adj_;    // Neighbors and edge costs
-  std::unordered_map<port_t, port_t> hops_;
-  std::unordered_map<port_t, dv_t> memo_;
 
-};
+bool bellman_ford_update(dv_t& myvec, std::unordered_map<port_t, port_t>& myhop,
+    const std::unordered_map<port_t, dv_t>& memo) {
+  bool ret = false;
+  for (const auto& edge : myvec) {
+    auto src = memo.find(edge.first);
+    if (src == memo.end()) continue;
+    for (const auto& dest : src->second) {
+      if (myvec.find(dest.first ) == myvec.end() ||
+          edge.second + dest.second < myvec[dest.first]) {
+        //MY_INFO_STREAM << "edge " << edge.first << ", " << edge.second << std::endl;
+        //MY_INFO_STREAM << "dest " << dest.first << ", " << dest.second << std::endl;
+        myvec[dest.first] = edge.second + dest.second;
+        myhop[dest.first] = edge.first;
+        ret = true;
+      }
+    }
+  }
+  return ret;
+}
 
-std::string DVTable::DVStr() {
+inline std::string dv_out(dv_t v) {
   std::stringstream ss;
-  ss << id_ << '\n';
-  for (auto it : memo_[id_]) {
-    ss << it.first << ':' << it.second<<'\n';
+  for (auto it : v) {
+    ss << it.first << pairDelim << it.second << entryDelim;
   }
   return ss.str();
 }
 
-bool DVTable::Insert(port_t x, dv_t v) {
-  bool ret = (memo_.find(x) == memo_.end());
-  memo_[x] = v;
-  return ret;
-}
-
-bool DVTable::Update() {
-  // TODO: implement Bellman-Ford Algorithm
-  return true;
-}
-
-std::ostream& operator << (std::ostream& os, const DVTable& t) {
-  for (auto it : t.memo_) {
-    os << "port " << it.first;
-    for (auto it2 : it.second) {
-      os << " | " << it2.first << "(" << it2.second << ")";
-    }
-    os << std::endl;
+std::pair<port_t, dv_t> dv_in(std::string msg) {
+  MY_INFO_STREAM << "dv_in" << " " << msg << std::endl;
+  size_t pos0 = 0, pos1 = msg.find(entryDelim, pos0), pos2 = pos1;
+  port_t port = cstr_to_port(msg.substr(pos0, pos1-pos0).c_str());
+  //std::cout << "port = " << port << std::endl;
+  dv_t vec;
+  while (true) {
+    pos0 = pos2 + 1;
+    pos1 = msg.find(pairDelim, pos0);
+    pos2 = msg.find(entryDelim, pos1+1);
+    if (pos1 == std::string::npos || pos2 == std::string::npos) break;
+    port_t p = cstr_to_port(msg.substr(pos0, pos1-pos0).c_str());
+    float f = std::stof(msg.substr(pos1+1, pos2-pos1-1));
+    //std::cout << "p = " << p << " f = " << f << std::endl;
+    //std::cout << "p = " << msg.substr(pos0, pos1-pos0) << " f = " << msg.substr(pos1+1, pos2-pos1-1) << std::endl;
+    vec[p] = f;
   }
-  return os;
+  return std::make_pair(port, vec);
 }
+
 #endif
