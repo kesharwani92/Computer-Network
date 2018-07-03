@@ -5,67 +5,62 @@ Yan-Song Chen, yc3240
 Part 1 - Go-Back-N Protocol
 ================================================================================
 *******************************Test Case 2-1************************************
-This cases show the correctness of deterministic mode.
-The out stream seems to have some concurrency issue, so the time stamp is not
-really in order. However, from the sender side, we can see that the timeout
-handling mechanism is correct.
+This cases show the correctness of deterministic mode. We can see that the 
+timeout handling mechanism is correct.
 
-Receiver$ ./gbnnode 1111 2222 3 -d 5
-> send abcdefgh
-[1530657170.515] packet0 a sent
-[1530657170.535] packet1 b sent
-[1530657170.554] packet2 c sent
-[1530657170.569] packet3 d sent
-[1530657170.617] ACK0 received, window moved to 1
-[1530657170.625] ACK1 received, window moved to 2
-[1530657170.628] ACK2 received, window moved to 3
-[1530657170.630] packet4 e sent
-[1530657170.640[] packet5 f sent
-1530657170.632] ACK3 received, window moved to 4
-[1530657170.648] packet6 g sent
-[1530657170.659] ACK3 discarded
-[1530657170.668] ACK3 received, window moved to 4
-[1530657171.484] timeout
-[1530657171.517] packet4 e sent
-[1530657171.531] packet5 f sent
-[1530657171.539] packet6 g sent
-[1530657171.573] ACK4 received, window moved to 5
-[1530657171.580] ACK5 received, window moved to 6[
-1530657171.580] packet7 h sent
-[1530657171.609] ACK5 received, window moved to 6
-[1530657171.555] timeout
-[1530657171.591] packet6 g sent
-[1530657171.603] packet7 h sent
-[1530657171.641] ACK6 discarded
-[1530657171.647] ACK7 received, window moved to 8
-[Summary] 2/11packets dropped, loss rate = 0.181818
+Sender$ ./gbnnode 1111 2222 5 -d 7
+> send abcdefghi
+[1530658274.35] packet0 a sent
+[1530658274.55] packet1 b sent
+[1530658274.73] packet2 c sent
+[1530658274.80] packet3 d sent
+[1530658274.85] packet4 e sent
+[1530658274.101] ACK0 received, window moved to 1
+[1530658274.111] ACK1 received, window moved to 2
+[1530658274.116] packet5 f sent
+[1530658274.122] ACK2 received, window moved to 3
+[1530658274.126] packet6 g sent
+[1530658274.132] ACK3 received, window moved to 4
+[1530658274.137] packet7 h sent
+[1530658274.143] ACK4 received, window moved to 5
+[1530658274.147] packet8 i sent
+[1530658274.153] ACK5 received, window moved to 6
+[1530658274.167] ACK5 discarded
+[1530658274.177] ACK5 received, window moved to 6
+[1530658274.2] timeout
+[1530658274.39] packet6 g sent
+[1530658274.67] packet7 h sent
+[1530658274.88] packet8 i sent
+[1530658274.110] ACK6 received, window moved to 7
+[1530658274.116] ACK7 received, window moved to 8
+[1530658274.119] ACK8 received, window moved to 9
+[Summary] 1/11packets dropped, loss rate = 0.0909091
 
-Sender$ ./gbnnode 2222 1111 3 -d 5
-> [1530657170.530] packet 0 a received
-[1530657170.574] ACK0 sent, expecting 1
-[1530657170.582] packet 1 b received
-[1530657170.589] ACK1 sent, expecting 2
-[1530657170.593] packet 2 c received
-[1530657170.598] ACK2 sent, expecting 3
-[1530657170.602] packet 3 d received
-[1530657170.606] ACK3 sent, expecting 4
-[1530657170.636] packet4 e discarded
-[1530657170.645] packet 5 f received
-[1530657170.656] ACK3 sent, expecting 4
-[1530657170.660] packet 6 g received
-[1530657170.666] ACK3 sent, expecting 4
-[1530657171.526] packet 4 e received
-[1530657171.547] ACK4 sent, expecting 5
-[1530657171.553] packet 5 f received
-[1530657171.558] ACK5 sent, expecting 6
-[1530657171.562] packet6 g discarded
-[1530657171.593] packet 7 h received
-[1530657171.604] ACK5 sent, expecting 6
-[1530657171.599] packet 6 g received
-[1530657171.618] ACK6 sent, expecting 7
-[1530657171.624] packet 7 h received
-[1530657171.630] ACK7 sent, expecting 8
-[Summary] 2/13packets dropped, loss rate = 0.153846
+Receiver$ ./gbnnode 2222 1111 5 -d 7
+> [1530658274.53] packet 0 a received
+[1530658274.95] ACK0 sent, expecting 1
+[1530658274.101] packet 1 b received
+[1530658274.109] ACK1 sent, expecting 2
+[1530658274.113] packet 2 c received
+[1530658274.120] ACK2 sent, expecting 3
+[1530658274.123] packet 3 d received
+[1530658274.130] ACK3 sent, expecting 4
+[1530658274.134] packet 4 e received
+[1530658274.141] ACK4 sent, expecting 5
+[1530658274.144] packet 5 f received
+[1530658274.151] ACK5 sent, expecting 6
+[1530658274.155] packet6 g discarded
+[1530658274.158] packet 7 h received
+[1530658274.165] ACK5 sent, expecting 6
+[1530658274.169] packet 8 i received
+[1530658274.175] ACK5 sent, expecting 6
+[1530658274.48] packet 6 g received
+[1530658274.69] ACK6 sent, expecting 7
+[1530658274.75] packet 7 h received
+[1530658274.84] ACK7 sent, expecting 8
+[1530658274.91] packet 8 i received
+[1530658274.98] ACK8 sent, expecting 9
+[Summary] 1/12packets dropped, loss rate = 0.0833333
 
 *******************************Test Case 2-1************************************
 This case shows that the behavior and intermediate messages are correct.

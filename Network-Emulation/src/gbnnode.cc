@@ -106,7 +106,7 @@ void __gbn_fsm(const std::string& buf) {
 send_state:
   if (timeout_flag)
     goto timeout_state;
-  for (; nextseq < base + window && nextseq < buf.size(); nextseq++) {
+  for (; nextseq < base + window -1 && nextseq < buf.size(); nextseq++) {
     std::string msg = "SEQ:" + std::to_string(nextseq) + ":" + buf[nextseq];
     udpsend(fd, dest, msg);
     MY_INFO_STREAM << "packet" << nextseq << ' ' << buf[nextseq] << " sent"
