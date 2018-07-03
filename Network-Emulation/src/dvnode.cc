@@ -16,7 +16,7 @@ inline void __print_table(port_t myport, dv_t& myvec,
   for (auto it : myvec) {
     if (it.first == myport) continue;
     std::cout << " - (" <<  it.second << ") -> Node " << it.first;
-    if (myhop[it.first] == myport) {
+    if (myhop[it.first] == it.first) {
       std::cout << std::endl;
     } else {
       std::cout << "; Next hop -> Node " << myhop[it.first] << std::endl;
@@ -45,6 +45,7 @@ int main(int argc, char** argv) {
     port_t p = cstr_to_port(argv[i]);
     float f = std::stof(argv[i+1]);
     myvec[p] = f;
+    myhop[p] = p;
 
     struct sockaddr_in n;
     set_udp_addr(n, p);

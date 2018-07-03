@@ -19,8 +19,8 @@ bool bellman_ford_update(dv_t& myvec, std::unordered_map<port_t, port_t>& myhop,
     for (const auto& dest : src->second) {
       if (myvec.find(dest.first ) == myvec.end() ||
           edge.second + dest.second < myvec[dest.first]) {
+        myhop[dest.first] = myhop[edge.first];
         myvec[dest.first] = edge.second + dest.second;
-        myhop[dest.first] = edge.first;
         ret = true;
       }
     }
@@ -37,6 +37,7 @@ inline std::string dv_out(dv_t v) {
 }
 
 std::pair<port_t, dv_t> dv_in(std::string msg) {
+  //std::cout << "dv_in " << msg << std::endl;
   size_t pos0 = 0, pos1 = msg.find(entryDelim, pos0), pos2 = pos1;
   port_t port = cstr_to_port(msg.substr(pos0, pos1-pos0).c_str());
   dv_t vec;
