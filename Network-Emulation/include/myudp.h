@@ -1,3 +1,11 @@
+/*******************************************************************************
+* myudp.h
+* 
+* Socket related functions and data types.
+*
+* Author: Yan-Song Chen
+* Date  : Jul 2nd, 2018
+*******************************************************************************/
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <common.h>

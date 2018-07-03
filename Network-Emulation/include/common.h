@@ -1,3 +1,11 @@
+/*******************************************************************************
+* common.h
+* 
+* Utility functions for CSEE4119 Programming Assignment 2.
+*
+* Author: Yan-Song Chen
+* Date  : Jul 2nd, 2018
+*******************************************************************************/
 #include <sys/time.h>
 #include <iostream>
 #include <unistd.h>     // errno

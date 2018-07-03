@@ -1,15 +1,24 @@
+/*******************************************************************************
+* dvnnode.cc
+* 
+* Distance Vector Algorithm.
+*
+* Author: Yan-Song Chen
+* Date  : Jul 2nd, 2018
+*******************************************************************************/
 #include <dvnode.h>
 #include <thread>
 #include <vector>
 
-void __broadcase(int fd, const std::vector<struct sockaddr_in>& neighbors,
+// Sends out message to all neighbors
+void __broadcast(int fd, const std::vector<struct sockaddr_in>& neighbors,
     std::string msg) {
-  //MY_INFO_STREAM << "Network kickoff" << std::endl;
   for (auto neighbor : neighbors) {
     udpsend(fd, neighbor, msg);
   }
 }
 
+// Print out the routing table according to specification of PA2
 inline void __print_table(port_t myport, dv_t& myvec,
     std::unordered_map<port_t, port_t>& myhop) {
   MY_INFO_STREAM << "Node " << myport << " Routing Table" << std::endl;
@@ -25,21 +34,20 @@ inline void __print_table(port_t myport, dv_t& myvec,
 }
 
 int main(int argc, char** argv) {
-  // Per-process variables
+  // Parse arguments and initialize per-process variables
   dv_t myvec;
   std::unordered_map<port_t, port_t> myhop;
   std::unordered_map<port_t, dv_t> memo;
   std::vector<struct sockaddr_in> neighbors;
 
-  // Parse arguments and initialze variables
   port_t myport = cstr_to_port(argv[1]);
-  bool last = false;
+  bool activated = false;   // A node publishes its vector on activation
   myvec[myport] = 0;        // Dummy entry for Bellman-Ford update
-  myhop[myport] = myport;
+  myhop[myport] = myport;   // Another dummy entry
 
   for (int i = 2; i < argc; i+=2) {
     if (std::string(argv[i]) == "last"){
-      last = true;
+      activated = true;
       break;
     }
     port_t p = cstr_to_port(argv[i]);
@@ -58,13 +66,16 @@ int main(int argc, char** argv) {
   set_udp_addr(myaddr, myport);
   init_udp(fd, myaddr);
 
-  std::string outmsg = std::to_string(myport) + entryDelim + dv_out(myvec);
-  if (last) {
-    std::thread kickoff(__broadcase, fd, neighbors, outmsg);
+  // The "last" node will shoot the first distance vector and activate the
+  // network. The broadcast process is threaded so that the listening socket
+  // won't miss incoming messages.
+  if (activated) {
+    std::string outmsg = std::to_string(myport) + entryDelim + dv_out(myvec);
+    std::thread kickoff(__broadcast, fd, neighbors, outmsg);
     kickoff.detach();
   }
 
-  // Listen and update DV table
+  // Use the socket to receive distance vectors
   struct sockaddr_in rcvaddr;
   socklen_t addrlen = sizeof(rcvaddr);
   char buf[bufferSize];
@@ -75,15 +86,18 @@ int main(int argc, char** argv) {
     while ((ret = recvfrom(fd, buf, bufferSize, 0, (struct sockaddr*)&rcvaddr,
         &addrlen)) == -1 && errno == EINTR);
     buf[ret] = '\0';
+
     std::pair<port_t, dv_t> msg = dv_in(std::string(buf, ret));
     memo[msg.first] = msg.second;
     
-    if (bellman_ford_update(myvec, myhop, memo) || !last) {
+    // If the node has never broadcast its distance vector, it will do broadcast
+    // right here. Otherwise if the Bellman-Ford equation updates the distance
+    // vector, broadcast the new vector too.
+    if (!activated || bellman_ford_update(myvec, myhop, memo)) {
       last = true;
       std::string outmsg = std::to_string(myport) + entryDelim + dv_out(myvec);
-      //MY_INFO_STREAM << "Broadcast new vector " << outmsg << std::endl;
       __print_table(myport, myvec, myhop);
-      std::thread kickoff(__broadcase, fd, neighbors, outmsg);
+      std::thread kickoff(__broadcast, fd, neighbors, outmsg);
       kickoff.detach();
     }
 
