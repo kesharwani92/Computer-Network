@@ -106,7 +106,7 @@ void __gbn_fsm(const std::string& buf) {
 send_state:
   if (timeout_flag)
     goto timeout_state;
-  for (; nextseq < base + window -1 && nextseq < buf.size(); nextseq++) {
+  for (; nextseq < base + window && nextseq < buf.size(); nextseq++) {
     std::string msg = "SEQ:" + std::to_string(nextseq) + ":" + buf[nextseq];
     udpsend(fd, dest, msg);
     MY_INFO_STREAM << "packet" << nextseq << ' ' << buf[nextseq] << " sent"
@@ -117,7 +117,7 @@ chkack_state:
   if (timeout_flag)
     goto timeout_state;
   grab_lock(acklock);
-  base = ack + 1;
+  base = ack + 1; 
   if (base == buf.size()) {
     ack = 0;
     release_lock(acklock);
@@ -126,6 +126,7 @@ chkack_state:
   } else if (base == nextseq) {
     release_lock(acklock);
     ualarm(timeoutDuration, 0);
+    MY_ERROR_STREAM << "reset timer" << std::endl;
     goto send_state;
   }
   release_lock(acklock);
@@ -155,7 +156,7 @@ finish_fsm:
   udpsend(fd, dest, msg);
   std::cout << "[Summary] " << dropcnt << '/' << numpkt
       << "packets dropped, loss rate = " << static_cast<float>(dropcnt)/numpkt
-      << std::endl;
+      << std::endl << "> " << std::flush;
 }
 
 
@@ -207,7 +208,8 @@ void recv_proc() {
       release_lock(acklock);
       std::cout << "[Summary] " << dropcnt << '/' << numpkt
           << "packets dropped, loss rate = "
-          << static_cast<float>(dropcnt)/numpkt << std::endl;
+          << static_cast<float>(dropcnt)/numpkt << std::endl << "> "
+          << std::flush;
     }
   }
 }
@@ -218,16 +220,17 @@ void recv_proc() {
 inline void __take_or_drop_ack(const std::string& inmsg, const size_t& pos0) {
   size_t pos1 = inmsg.find(':', pos0+1);
   int newack = stoi(inmsg.substr(pos0+1, pos1-pos0-1));
+  numpkt++;
   if (drop_packet()) {
     dropcnt++;
     MY_INFO_STREAM << "ACK" << newack << " discarded" << std::endl;
   } else {
-    numpkt++;
-    MY_INFO_STREAM << "ACK" << newack << " received, window moved to "
-        << newack+1 << std::endl;
+    
     grab_lock(acklock);
     ack = newack;
     release_lock(acklock);
+    MY_INFO_STREAM << "ACK" << newack << " received, window moved to "
+        << newack+1 << std::endl;
   }
 }
 
@@ -235,6 +238,7 @@ inline void __take_or_drop_pkt(const std::string& inmsg, const size_t& pos0,
     int& expected) {
   size_t pos1 = inmsg.find(':', pos0+1);
   int seq = stoi(inmsg.substr(pos0+1, pos1-pos0-1));
+  numpkt++;
   if (drop_packet()) {
     dropcnt++;
     MY_INFO_STREAM << "packet" << seq << ' ' << inmsg[pos1+1]
@@ -247,7 +251,7 @@ inline void __take_or_drop_pkt(const std::string& inmsg, const size_t& pos0,
     MY_INFO_STREAM << "ACK" << expected << " sent, expecting " 
         << expected+1 << std::endl;
     expected++;
-    numpkt++;
+    
   } else {
     MY_INFO_STREAM << "packet " << seq << ' ' << inmsg[pos1+1]
         << " received" << std::endl;
@@ -260,9 +264,9 @@ inline void __take_or_drop_pkt(const std::string& inmsg, const size_t& pos0,
 
 int main(int argc, char** argv) {
   // Convert arguments to global variables
-  window = std::stoi(argv[1]);
-  set_udp_addr(src, cstr_to_port(argv[2]));
-  set_udp_addr(dest, cstr_to_port(argv[3]));
+  set_udp_addr(src, cstr_to_port(argv[1]));
+  set_udp_addr(dest, cstr_to_port(argv[2]));
+  window = std::stoi(argv[3]);
 
   if (std::string(argv[4]) == "-d") {  
     dropmode = true;
@@ -276,6 +280,7 @@ int main(int argc, char** argv) {
   }
 
   init_udp(fd, src);
+  std::cout << "> " << std::flush;
   std::thread user_cin(cin_proc);
   std::thread send_gbn(gbn_proc);
   recv_proc();
