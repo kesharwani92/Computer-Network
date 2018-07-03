@@ -10,12 +10,25 @@ void __broadcase(int fd, const std::vector<struct sockaddr_in>& neighbors,
   }
 }
 
+inline void __print_table(port_t myport, dv_t& myvec,
+    std::unordered_map<port_t, port_t>& myhop) {
+  MY_INFO_STREAM << "Node " << myport << " Routing Table" << std::endl;
+  for (auto it : myvec) {
+    if (it.first == myport) continue;
+    std::cout << " - (" <<  it.second << ") -> Node " << it.first;
+    if (myhop[it.first] == myport) {
+      std::cout << std::endl;
+    } else {
+      std::cout << "; Next hop -> Node " << myhop[it.first] << std::endl;
+    }
+  }
+}
+
 int main(int argc, char** argv) {
   // Per-process variables
   dv_t myvec;
   std::unordered_map<port_t, port_t> myhop;
   std::unordered_map<port_t, dv_t> memo;
-  //dv_t edges;
   std::vector<struct sockaddr_in> neighbors;
 
   // Parse arguments and initialze variables
@@ -31,7 +44,6 @@ int main(int argc, char** argv) {
     }
     port_t p = cstr_to_port(argv[i]);
     float f = std::stof(argv[i+1]);
-    //edges[p] = f;
     myvec[p] = f;
 
     struct sockaddr_in n;
@@ -46,14 +58,12 @@ int main(int argc, char** argv) {
   init_udp(fd, myaddr);
 
   std::string outmsg = std::to_string(myport) + entryDelim + dv_out(myvec);
-  MY_INFO_STREAM << "original vector" << outmsg << std::endl;
   if (last) {
     std::thread kickoff(__broadcase, fd, neighbors, outmsg);
     kickoff.detach();
   }
 
   // Listen and update DV table
-  MY_INFO_STREAM << "listen and update DV table" << std::endl;
   struct sockaddr_in rcvaddr;
   socklen_t addrlen = sizeof(rcvaddr);
   char buf[bufferSize];
@@ -64,14 +74,14 @@ int main(int argc, char** argv) {
     while ((ret = recvfrom(fd, buf, bufferSize, 0, (struct sockaddr*)&rcvaddr,
         &addrlen)) == -1 && errno == EINTR);
     buf[ret] = '\0';
-    //MY_INFO_STREAM << "receive message " << buf << std::endl;
     std::pair<port_t, dv_t> msg = dv_in(std::string(buf, ret));
     memo[msg.first] = msg.second;
     
     if (bellman_ford_update(myvec, myhop, memo) || !last) {
       last = true;
       std::string outmsg = std::to_string(myport) + entryDelim + dv_out(myvec);
-      MY_INFO_STREAM << "Broadcast new vector " << outmsg << std::endl;
+      //MY_INFO_STREAM << "Broadcast new vector " << outmsg << std::endl;
+      __print_table(myport, myvec, myhop);
       std::thread kickoff(__broadcase, fd, neighbors, outmsg);
       kickoff.detach();
     }

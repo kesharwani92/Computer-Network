@@ -19,8 +19,6 @@ bool bellman_ford_update(dv_t& myvec, std::unordered_map<port_t, port_t>& myhop,
     for (const auto& dest : src->second) {
       if (myvec.find(dest.first ) == myvec.end() ||
           edge.second + dest.second < myvec[dest.first]) {
-        //MY_INFO_STREAM << "edge " << edge.first << ", " << edge.second << std::endl;
-        //MY_INFO_STREAM << "dest " << dest.first << ", " << dest.second << std::endl;
         myvec[dest.first] = edge.second + dest.second;
         myhop[dest.first] = edge.first;
         ret = true;
@@ -39,10 +37,8 @@ inline std::string dv_out(dv_t v) {
 }
 
 std::pair<port_t, dv_t> dv_in(std::string msg) {
-  MY_INFO_STREAM << "dv_in" << " " << msg << std::endl;
   size_t pos0 = 0, pos1 = msg.find(entryDelim, pos0), pos2 = pos1;
   port_t port = cstr_to_port(msg.substr(pos0, pos1-pos0).c_str());
-  //std::cout << "port = " << port << std::endl;
   dv_t vec;
   while (true) {
     pos0 = pos2 + 1;
@@ -51,8 +47,6 @@ std::pair<port_t, dv_t> dv_in(std::string msg) {
     if (pos1 == std::string::npos || pos2 == std::string::npos) break;
     port_t p = cstr_to_port(msg.substr(pos0, pos1-pos0).c_str());
     float f = std::stof(msg.substr(pos1+1, pos2-pos1-1));
-    //std::cout << "p = " << p << " f = " << f << std::endl;
-    //std::cout << "p = " << msg.substr(pos0, pos1-pos0) << " f = " << msg.substr(pos1+1, pos2-pos1-1) << std::endl;
     vec[p] = f;
   }
   return std::make_pair(port, vec);
