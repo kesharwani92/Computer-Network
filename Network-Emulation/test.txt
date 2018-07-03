@@ -2,7 +2,153 @@ CSEE 4199 Programming Assignment 2
 Yan-Song Chen, yc3240
 
 ================================================================================
-Part 2
+Part 1 - Go-Back-N Protocol
+================================================================================
+*******************************Test Case 2-1************************************
+This cases show the correctness of deterministic mode.
+The out stream seems to have some concurrency issue, so the time stamp is not
+really in order. However, from the sender side, we can see that the timeout
+handling mechanism is correct.
+
+Receiver$ ./gbnnode 1111 2222 3 -d 5
+> send abcdefgh
+[1530657170.515] packet0 a sent
+[1530657170.535] packet1 b sent
+[1530657170.554] packet2 c sent
+[1530657170.569] packet3 d sent
+[1530657170.617] ACK0 received, window moved to 1
+[1530657170.625] ACK1 received, window moved to 2
+[1530657170.628] ACK2 received, window moved to 3
+[1530657170.630] packet4 e sent
+[1530657170.640[] packet5 f sent
+1530657170.632] ACK3 received, window moved to 4
+[1530657170.648] packet6 g sent
+[1530657170.659] ACK3 discarded
+[1530657170.668] ACK3 received, window moved to 4
+[1530657171.484] timeout
+[1530657171.517] packet4 e sent
+[1530657171.531] packet5 f sent
+[1530657171.539] packet6 g sent
+[1530657171.573] ACK4 received, window moved to 5
+[1530657171.580] ACK5 received, window moved to 6[
+1530657171.580] packet7 h sent
+[1530657171.609] ACK5 received, window moved to 6
+[1530657171.555] timeout
+[1530657171.591] packet6 g sent
+[1530657171.603] packet7 h sent
+[1530657171.641] ACK6 discarded
+[1530657171.647] ACK7 received, window moved to 8
+[Summary] 2/11packets dropped, loss rate = 0.181818
+
+Sender$ ./gbnnode 2222 1111 3 -d 5
+> [1530657170.530] packet 0 a received
+[1530657170.574] ACK0 sent, expecting 1
+[1530657170.582] packet 1 b received
+[1530657170.589] ACK1 sent, expecting 2
+[1530657170.593] packet 2 c received
+[1530657170.598] ACK2 sent, expecting 3
+[1530657170.602] packet 3 d received
+[1530657170.606] ACK3 sent, expecting 4
+[1530657170.636] packet4 e discarded
+[1530657170.645] packet 5 f received
+[1530657170.656] ACK3 sent, expecting 4
+[1530657170.660] packet 6 g received
+[1530657170.666] ACK3 sent, expecting 4
+[1530657171.526] packet 4 e received
+[1530657171.547] ACK4 sent, expecting 5
+[1530657171.553] packet 5 f received
+[1530657171.558] ACK5 sent, expecting 6
+[1530657171.562] packet6 g discarded
+[1530657171.593] packet 7 h received
+[1530657171.604] ACK5 sent, expecting 6
+[1530657171.599] packet 6 g received
+[1530657171.618] ACK6 sent, expecting 7
+[1530657171.624] packet 7 h received
+[1530657171.630] ACK7 sent, expecting 8
+[Summary] 2/13packets dropped, loss rate = 0.153846
+
+*******************************Test Case 2-1************************************
+This case shows that the behavior and intermediate messages are correct.
+Terminal1$ ./gbnnode 9999 3333 3 -d 4
+> send abcdefgh
+send abcdefgh 
+[1530653392.143] packet0 a sent
+[1530653392.212[] 1530653392.packet2131 b sent] 
+[1530653392.225] packet2 c sent
+ACK0 received, window moved to 1
+[1530653392.951] ACK1 received, window moved to 2
+[1530653392.956] ACK2 received, window moved to 3
+[1530653392.975] packet3 d sent
+[1530653392.985] packet4 e sent
+[1530653392.11] ACK2 discarded
+[1530653392.110] timeout
+[1530653392.144] packet3 d sent
+[1530653392.167] packet4 e sent
+[1530653392.175] ACK3 received, window moved to 4
+[1530653392.183] ACK4 received, window moved to 5
+[1530653392.200] packet5 f sent
+[1530653392.209] packet6 g sent
+[1530653392.234] ACK4 received, window moved to 5
+[1530653392.183] timeout
+[1530653392.224] packet5 f sent
+[1530653392.236] packet6 g sent
+[1530653392.261] ACK5 discarded
+[1530653392.271] ACK6 received, window moved to 7
+[1530653392.297] packet7 h sent
+[1530653392.285] timeout
+[1530653392.319] packet7 h sent
+[1530653392.360] ACK7 received, window moved to 8
+[Summary] 2/10packets dropped, loss rate = 0.2
+
+Terminal2$ ./gbnnode 3333 9999 3 -d 4
+[1530653392.154] packet 0 a received
+[1530653392.199] ACK0 sent, expecting 1
+[1530653392.218] packet 1 b received
+[1530653392.237] ACK1 sent, expecting 2
+[1530653392.242] packet 2 c received
+[1530653392.247] ACK2 sent, expecting 3
+[1530653392.968] packet3 d discarded
+[1530653392.988] packet 4 e received
+[1530653392.1] ACK2 sent, expecting 3
+[1530653392.152] packet 3 d received
+[1530653392.169] ACK3 sent, expecting 4
+[1530653392.174] packet 4 e received
+[1530653392.181] ACK4 sent, expecting 5
+[1530653392.192] packet5 f discarded
+[1530653392.212] packet 6 g received
+[1530653392.225] ACK4 sent, expecting 5
+[1530653392.234] packet 5 f received
+[1530653392.256] ACK5 sent, expecting 6
+[1530653392.260] packet 6 g received
+[1530653392.269] ACK6 sent, expecting 7
+[1530653392.288] packet7 h discarded
+[1530653392.328] packet 7 h received
+[1530653392.347] ACK7 sent, expecting 8
+[Summary] 3/13packets dropped, loss rate = 0.230769
+
+*******************************Test Case 2-2************************************
+This case shows that the loss rates converge to the -p arguments. The
+intermediate messages are ignored for clarity.
+
+Firstly send a string from terminal 1, the sender's probability is 0.192308 and
+the receiver's probability is 0.297297.
+
+Secondly send another long string from terminal 2, the sender's probility is
+0.321839, and the receivers probability is 0.20202.
+
+Terminal1$ ./gbnnode 9999 3333 5 -p 0.2
+> send abcdefghijklmnopqr
+[Summary] 5/26packets dropped, loss rate = 0.192308
+...
+[Summary] 40/198packets dropped, loss rate = 0.20202
+
+Terminal2$ ./gbnnode 3333 9999 5 -p 0.3
+...
+[Summary] 11/37packets dropped, loss rate = 0.297297
+> send xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+[Summary] 56/174packets dropped, loss rate = 0.321839
+================================================================================
+Part 2 - Distance Vector Algorithm
 ================================================================================
 
 *******************************Test Case 2-1************************************
