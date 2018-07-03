@@ -94,7 +94,7 @@ int main(int argc, char** argv) {
     // right here. Otherwise if the Bellman-Ford equation updates the distance
     // vector, broadcast the new vector too.
     if (!activated || bellman_ford_update(myvec, myhop, memo)) {
-      last = true;
+      activated = true;
       std::string outmsg = std::to_string(myport) + entryDelim + dv_out(myvec);
       __print_table(myport, myvec, myhop);
       std::thread kickoff(__broadcast, fd, neighbors, outmsg);
