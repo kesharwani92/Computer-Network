@@ -1,7 +1,8 @@
 #include <dvnode.h>
 #include <thread>
 #include <vector>
-void __kickoff(int fd, const std::vector<struct sockaddr_in>& neighbors,
+
+void __broadcase(int fd, const std::vector<struct sockaddr_in>& neighbors,
     std::string msg) {
   MY_INFO_STREAM << "Network kickoff" << std::endl;
   for (auto neighbor : neighbors) {
@@ -39,7 +40,7 @@ int main(int argc, char** argv) {
   MY_INFO_STREAM << "My table\n" << t.Str() << std::flush;
 
   if (last) {
-    std::thread kickoff(__kickoff, fd, neighbors, t.Str());
+    std::thread kickoff(__broadcase, fd, neighbors, t.Str());
     kickoff.detach();
   }
 
