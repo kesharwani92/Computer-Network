@@ -10,6 +10,27 @@ void __broadcase(int fd, const std::vector<struct sockaddr_in>& neighbors,
   }
 }
 
+std::pair<port_t, dv_t> __translate_msg(std::string s) {
+  dv_t vec;
+  size_t pos0 = 0;
+  size_t pos1 = s.find('\n');
+  port_t port = cstr_to_port(s.substr(pos0, pos1-pos0).c_str());
+  pos0 = pos1+1;
+  pos1 = s.find(':');
+  size_t pos2 = s.find('\n', pos0);
+  while (pos0 < s.size() && pos0 != std::string::npos &&
+      pos1 != std::string::npos) {
+    port_t p =  cstr_to_port(s.substr(pos0, pos1-pos0).c_str());
+    float f = std::stof(s.substr(pos1+1, pos2));
+    //std::cout << p << "----" << f << std::endl;
+    pos0 = pos2 + 1;
+    pos1 = s.find(':', pos0);
+    pos2 = s.find('\n', pos0);
+    vec[p] = f;
+  }
+  return {port, vec};
+}
+
 int main(int argc, char** argv) {
   //MY_INFO_STREAM << "dvnode program" << std::endl;
   // Parse arguments
@@ -37,10 +58,9 @@ int main(int argc, char** argv) {
   init_udp(fd, myaddr);
 
   t.Insert(myport, v);
-  MY_INFO_STREAM << "My table\n" << t.Str() << std::flush;
 
   if (last) {
-    std::thread kickoff(__broadcase, fd, neighbors, t.Str());
+    std::thread kickoff(__broadcase, fd, neighbors, t.DVStr());
     kickoff.detach();
   }
 
@@ -56,7 +76,11 @@ int main(int argc, char** argv) {
     while ((ret = recvfrom(fd, buf, bufferSize, 0, (struct sockaddr*)&rcvaddr,
         &addrlen)) == -1 && errno == EINTR);
     buf[ret] = '\0';
-    MY_INFO_STREAM << "receive vector" << std::endl << buf << std::flush;
+    //MY_INFO_STREAM << "receive vector" << std::endl << buf << std::flush;
+
+    std::pair<port_t, dv_t> msg = __translate_msg(std::string(buf, ret));
+    t.Insert(msg.first, msg.second);
+    MY_INFO_STREAM << "update table: " << std::endl << t;
   }
   return 0;
 }

@@ -10,7 +10,7 @@
 typedef uint16_t port_t;
 
 // Convert argument string to port_t
-inline port_t cstr_to_port(char* cstr) {
+inline port_t cstr_to_port(const char* cstr) {
 	return strtoul(cstr, nullptr, 0);
 }
 
