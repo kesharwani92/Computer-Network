@@ -41,9 +41,6 @@ static bool dropmode; // 1 for deterministic, 0 for probabilistic
 static int dropsum;
 static int dropn;
 static float dropprob;
-inline float rand_float() {
-  return static_cast<float>(rand()) / RAND_MAX;
-}
 bool drop_packet() {
   return (dropmode) ? (++dropsum % dropn) == 0 : rand_float() < dropprob;
 }

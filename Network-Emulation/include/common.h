@@ -47,4 +47,7 @@ inline void release_lock(std::atomic_flag& lock) {
   lock.clear(std::memory_order_release);
 }
 
+inline float rand_float() {
+  return static_cast<float>(rand()) / RAND_MAX;
+}
 #endif
