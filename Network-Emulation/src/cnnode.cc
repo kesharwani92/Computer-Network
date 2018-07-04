@@ -31,7 +31,7 @@ addrmap_t edges;
 void probe_proc(port_t dest,struct sockaddr_in addr) {
   std::string header = "PROBE:" + std::to_string(myport) + ':';
   while (proc_running) {
-    if (pauseprobe)usleep(100000);
+    //if (pauseprobe)usleep(100000);
     grab_lock(seqlock);
     std::string outmsg = header + std::to_string(seq[dest]);
     release_lock(seqlock); // udpsend blocks the process, release lock first
@@ -39,7 +39,7 @@ void probe_proc(port_t dest,struct sockaddr_in addr) {
     grab_lock(seqlock);
     seq[dest] = (seq[dest]+1)%10;
     release_lock(seqlock);
-    usleep(100000);
+    //usleep(100000);
   }
 }
 
@@ -90,7 +90,8 @@ void __take_or_drop_pck(char*& buf, ssize_t& n) {
     MY_ERROR_STREAM << "warning: " << p << " not in rcvaddr" << std::endl;
     return;
   } else if (rand_float() < droprate[p]) {
-    MY_INFO_STREAM << "drop packet" << std::endl;
+    //MY_INFO_STREAM << "drop packet" << std::endl;
+    ;
   } else {
     std::string outmsg = "ACK:" + std::to_string(myport) + ':' + data;
     udpsend(fd, addr->second, outmsg);
@@ -107,7 +108,7 @@ void __increment_ack(char*& buf, ssize_t n) {
   buf[i] = '\0';
   port_t p = cstr_to_port(buf);
   int newack = std::stoi(buf + i + 1);
-  MY_INFO_STREAM << "new ack = " << newack << std::endl;
+  //MY_INFO_STREAM << "new ack = " << newack << std::endl;
   //grab_lock(cntlock);
 
   //release_lock(cntlock);
@@ -170,12 +171,23 @@ int main(int argc, char** argv) {
     probing.detach();
   }
 
-  
+  timestamp_t last_dv_update = TIMESTAMP_NOW;
+  int update_cnt = 0;
   pauseprobe = false;
   struct sockaddr_in otheraddr;
   socklen_t addrlen = sizeof(otheraddr);
   char buf[bufferSize];
   while (true) {
+    if (checktimeout(last_dv_update,1000)) {
+      grab_lock(cntlock);
+      MY_ERROR_STREAM << "1 second up, update dv table" << std::endl;
+      release_lock(cntlock);
+      last_dv_update = TIMESTAMP_NOW;
+      if (++update_cnt == 5) {
+        MY_INFO_STREAM << "5 second up, broadcast myvec" << std::endl;
+        update_cnt = 0;
+      }
+    }
     ssize_t ret = recvfrom(fd, buf, bufferSize, 0, (struct sockaddr*)&otheraddr,
       &addrlen);
     buf[ret] = '\0';

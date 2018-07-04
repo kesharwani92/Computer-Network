@@ -36,7 +36,7 @@ typedef std::chrono::high_resolution_clock::time_point timestamp_t;
 #define TIMESTAMP_NOW std::chrono::high_resolution_clock::now()
 
 bool checktimeout (timestamp_t ref, int ms) {
-  return (TIMESTAMP_NOW - ref) >= std::chrono::milliseconds(500);
+  return (TIMESTAMP_NOW - ref) >= std::chrono::milliseconds(ms);
 }
 
 inline void grab_lock(std::atomic_flag& lock) {
