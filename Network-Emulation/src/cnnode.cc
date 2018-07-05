@@ -23,26 +23,36 @@ typedef struct {
   float lossrate;
 } record_t;
 
+// unorder_map is not thread safe, hence need to use spinlock to protect
+// from racing conditions
 typedef std::unordered_map<port_t, struct sockaddr_in> addrmap_t;
 typedef std::unordered_map<port_t, record_t> profile_t;
 
-// Drop manager
+
+// Loss-rate estimate
 dv_t droprate;
-profile_t counter;
+profile_t statistics;
 std::atomic_flag cntlock = ATOMIC_FLAG_INIT;
 
+// DV memoization
+dv_t myvec;
+std::unordered_map<port_t, port_t> myhop;
+std::unordered_map<port_t, dv_t> memo;
+std::vector<struct sockaddr_in> neighbors;
+
+// Program Control Flow
 bool proc_running = true;
 bool pauseprobe = true;
+
+// Socket-related
 port_t myport;
 int fd;
+addrmap_t edges;
 
-// unorder_map is not thread safe, hence need to use spinlock to protect
-// from racing conditions
+// Go-Back-N sequences
 std::unordered_map<port_t, int> seq, ack;
 std::atomic_flag acklock = ATOMIC_FLAG_INIT; 
 std::atomic_flag seqlock = ATOMIC_FLAG_INIT;
-
-addrmap_t edges;
 
 void probe_proc(port_t dest,struct sockaddr_in addr) {
   std::string header = "PROBE:" + std::to_string(myport) + ':';
@@ -56,17 +66,16 @@ void probe_proc(port_t dest,struct sockaddr_in addr) {
     seq[dest] = (seq[dest]+1)%10;
     release_lock(seqlock);
     grab_lock(cntlock);
-    counter[dest].sendcnt++;
+    statistics[dest].sendcnt++;
     release_lock(cntlock);
     usleep(10000);
   }
 }
 
-addrmap_t sendaddr, rcvaddr;
-void __broadcast(const addrmap_t& neighbors,
-    std::string msg) {
-  for (auto neighbor : neighbors) {
-    udpsend(fd, neighbor.second, msg);
+addrmap_t adjaddr;
+void __broadcast(std::string msg) {
+  for (auto it : adjaddr) {
+    udpsend(fd, it.second, msg);
   }
 }
 
@@ -103,17 +112,17 @@ void __take_or_drop_pck(char*& buf, ssize_t& n) {
   port_t p = cstr_to_port(buf);
   char data = buf[i+1];
   //MY_INFO_STREAM << "receive probing data: " << data << std::endl;
-  auto addr = rcvaddr.find(p);
-  if (addr == rcvaddr.end()) {
-    MY_ERROR_STREAM << "warning: " << p << " not in rcvaddr" << std::endl;
+  auto addr = adjaddr.find(p);
+  if (addr == adjaddr.end()) {
+    MY_ERROR_STREAM << "warning: " << p << " not in adjaddr" << std::endl;
     return;
   }
   grab_lock(cntlock);
-  counter[p].rcvcnt++;
+  statistics[p].rcvcnt++;
   release_lock(cntlock);
   if (rand_float() < droprate[p]) {
     grab_lock(cntlock);
-    counter[p].dropcnt++;
+    statistics[p].dropcnt++;
     release_lock(cntlock);
   } else {
     std::string outmsg = "ACK:" + std::to_string(myport) + ':' + data;
@@ -130,13 +139,11 @@ void __increment_ack(char*& buf, ssize_t n) {
   }
   buf[i] = '\0';
   port_t p = cstr_to_port(buf);
-  int newack = std::stoi(buf + i + 1);
-  //MY_INFO_STREAM << "new ack = " << newack << std::endl;
   grab_lock(acklock);
-  ack[p] = (ack[p]+1)%10;
+  ack[p] = std::stoi(buf + i + 1);
   release_lock(acklock);
   grab_lock(cntlock);
-  counter[p].ackcnt++;
+  statistics[p].ackcnt++;
   release_lock(cntlock);
 }
 
@@ -147,7 +154,6 @@ float __divide(int a, int b) {
 int main(int argc, char** argv) {
   // Parse arguments
   myport = cstr_to_port(argv[1]);
-  //MY_INFO_STREAM << "myport = " << myport << std::endl;
   struct sockaddr_in myaddr;
   set_udp_addr(myaddr, myport);
   init_udp(fd, myaddr);
@@ -165,7 +171,8 @@ int main(int argc, char** argv) {
     MY_ERROR_STREAM << "error: missing receive or send arguments" << std::endl;
     exit(1);
   } else {
-    MY_INFO_STREAM << "rcvarg = " << rcvarg << ", sendarg = " << sendarg << std::endl;  
+    MY_INFO_STREAM << "rcvarg = " << rcvarg << ", sendarg = " << sendarg
+      << std::endl;  
   }
 
   // Create receive list
@@ -176,8 +183,8 @@ int main(int argc, char** argv) {
 
     struct sockaddr_in s;
     set_udp_addr(s, p);
-    rcvaddr[p] = s;
-    counter[p] = {false, 0, 0, 0, 0};
+    adjaddr[p] = s;
+    statistics[p] = {false, 0, 0, 0, 0};
   }
   // Create send list
   pauseprobe = true;
@@ -188,7 +195,7 @@ int main(int argc, char** argv) {
     port_t p = cstr_to_port(argv[i]);
     struct sockaddr_in s;
     set_udp_addr(s, p);
-    sendaddr[p] = s;
+    adjaddr[p] = s;
 
     grab_lock(acklock); grab_lock(seqlock);
     seq[p] = ack[p] = 0;
@@ -196,7 +203,7 @@ int main(int argc, char** argv) {
 
     grab_lock(cntlock);
     //rcvcnt[p] = dropcnt[p] = sendcnt[p] = ackcnt[p] = 0;
-    counter[p] = {true, 0, 0, 0, 0};
+    statistics[p] = {true, 0, 0, 0, 0};
     release_lock(cntlock);
 
     std::thread probing(probe_proc, p, s);
@@ -205,19 +212,19 @@ int main(int argc, char** argv) {
 
   
   int update_times = 0;
-  pauseprobe = false;
   struct sockaddr_in otheraddr;
   socklen_t addrlen = sizeof(otheraddr);
   char buf[bufferSize];
 
 probing:
+  pauseprobe = false;
   update_times = 0;
   timestamp_t last_dv_update = TIMESTAMP_NOW;
   while (true) {
     if (checktimeout(last_dv_update,1000)) {
       grab_lock(cntlock);
       //MY_ERROR_STREAM << "1 second up, update dv table" << std::endl;
-      for (auto it : counter) {
+      for (auto it : statistics) {
         float lossrate;
         if (it.second.type) { // sender
           lossrate = __divide(it.second.sendcnt - it.second.ackcnt,
@@ -231,12 +238,12 @@ probing:
             << " packets sent, " << it.second.dropcnt
             << " lost, loss rate = " << lossrate << std::endl;
         }
-        
+        statistics[it.first].lossrate = lossrate;
       }
       release_lock(cntlock);
       last_dv_update = TIMESTAMP_NOW;
       if (++update_times == 5) {
-        MY_INFO_STREAM << "5 second up, broadcast myvec" << std::endl;
+        //MY_INFO_STREAM << "5 second up, broadcast myvec" << std::endl;
         goto dv_update;
       }
     }
@@ -251,6 +258,8 @@ probing:
     } else if (msgtype == "ACK") {
       __increment_ack(bufcpy, ret);
     } else if (msgtype == "DV") {
+      std::pair<port_t, dv_t> msg = dv_in(std::string(bufcpy, ret));
+      memo[msg.first] = msg.second;
       goto dv_update;
     } else {
         MY_INFO_STREAM << "unimlemented message: " << buf << std::endl;
@@ -258,11 +267,34 @@ probing:
   }
   
 dv_update:
-  MY_INFO_STREAM << "dv_update phase" << std::endl;
+  //MY_INFO_STREAM << "dv_update phase" << std::endl;
+  pauseprobe = true;
   last_dv_update = TIMESTAMP_NOW;
+  // Update distance vector
+  for (auto it : statistics) {
+    myvec[it.first] = it.second.lossrate;
+    myhop[it.first] = it.first;
+  }
+  bellman_ford_update(myvec, myhop, memo);
+  std::string header = "DV:" + std::to_string(myport) + entryDelim;
+  std::string outmsg = header + dv_out(myvec);
+  //MY_INFO_STREAM << "outmsg = " << outmsg << std::endl;
+  __broadcast(outmsg);
   while (true) {
     if (checktimeout(last_dv_update,1000)) {
+      print_table(myport, myvec, myhop);
       goto probing;
+    }
+    ssize_t ret = recvfrom(fd, buf, bufferSize, 0, (struct sockaddr*)&otheraddr,
+      &addrlen);
+    buf[ret] = '\0';
+    if (std::string(buf,3) != "DV:") continue; // ignore non-DV message
+    std::pair<port_t, dv_t> msg = dv_in(std::string(buf+3, ret-3));
+    memo[msg.first] = msg.second;
+    last_dv_update = TIMESTAMP_NOW;
+    if (bellman_ford_update(myvec, myhop, memo)) {
+      outmsg = header + dv_out(myvec);
+      __broadcast(outmsg);
     }
   }
   return 0;

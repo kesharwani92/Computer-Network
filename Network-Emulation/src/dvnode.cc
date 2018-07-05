@@ -18,20 +18,7 @@ void __broadcast(int fd, const std::vector<struct sockaddr_in>& neighbors,
   }
 }
 
-// Print out the routing table according to specification of PA2
-inline void __print_table(port_t myport, dv_t& myvec,
-    std::unordered_map<port_t, port_t>& myhop) {
-  MY_INFO_STREAM << "Node " << myport << " Routing Table" << std::endl;
-  for (auto it : myvec) {
-    if (it.first == myport) continue;
-    std::cout << " - (" <<  it.second << ") -> Node " << it.first;
-    if (myhop[it.first] == it.first) {
-      std::cout << std::endl;
-    } else {
-      std::cout << "; Next hop -> Node " << myhop[it.first] << std::endl;
-    }
-  }
-}
+
 
 int main(int argc, char** argv) {
   // Parse arguments and initialize per-process variables
@@ -96,7 +83,7 @@ int main(int argc, char** argv) {
     if (!activated || bellman_ford_update(myvec, myhop, memo)) {
       activated = true;
       std::string outmsg = std::to_string(myport) + entryDelim + dv_out(myvec);
-      __print_table(myport, myvec, myhop);
+      print_table(myport, myvec, myhop);
       std::thread kickoff(__broadcast, fd, neighbors, outmsg);
       kickoff.detach();
     }

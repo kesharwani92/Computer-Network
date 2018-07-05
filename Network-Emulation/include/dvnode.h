@@ -67,4 +67,19 @@ bool bellman_ford_update(dv_t& myvec, std::unordered_map<port_t, port_t>& myhop,
   return ret;
 }
 
+// Print out the routing table according to specification of PA2
+inline void print_table(port_t myport, dv_t& myvec,
+    std::unordered_map<port_t, port_t>& myhop) {
+  MY_INFO_STREAM << "Node " << myport << " Routing Table" << std::endl;
+  for (auto it : myvec) {
+    if (it.first == myport) continue;
+    std::cout << " - (" <<  it.second << ") -> Node " << it.first;
+    if (myhop[it.first] == it.first) {
+      std::cout << std::endl;
+    } else {
+      std::cout << "; Next hop -> Node " << myhop[it.first] << std::endl;
+    }
+  }
+}
+
 #endif
