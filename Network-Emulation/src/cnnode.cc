@@ -13,8 +13,24 @@
 #include <thread>
 #include <vector>
 #include <math.h>
+
+typedef struct {
+  bool type;  // true: send, false: receive
+  int sendcnt;
+  int ackcnt;
+  int rcvcnt;
+  int dropcnt;
+  float lossrate;
+} record_t;
+
 typedef std::unordered_map<port_t, struct sockaddr_in> addrmap_t;
-typedef std::unordered_map<port_t, int> intmap_t;
+typedef std::unordered_map<port_t, record_t> profile_t;
+
+// Drop manager
+dv_t droprate;
+profile_t counter;
+std::atomic_flag cntlock = ATOMIC_FLAG_INIT;
+
 bool proc_running = true;
 bool pauseprobe = true;
 port_t myport;
@@ -22,7 +38,7 @@ int fd;
 
 // unorder_map is not thread safe, hence need to use spinlock to protect
 // from racing conditions
-intmap_t seq, ack;
+std::unordered_map<port_t, int> seq, ack;
 std::atomic_flag acklock = ATOMIC_FLAG_INIT; 
 std::atomic_flag seqlock = ATOMIC_FLAG_INIT;
 
@@ -39,6 +55,9 @@ void probe_proc(port_t dest,struct sockaddr_in addr) {
     grab_lock(seqlock);
     seq[dest] = (seq[dest]+1)%10;
     release_lock(seqlock);
+    grab_lock(cntlock);
+    counter[dest].sendcnt++;
+    release_lock(cntlock);
     usleep(10000);
   }
 }
@@ -71,10 +90,9 @@ inline std::string __message_type(char*& buf, ssize_t& n) {
   throw std::exception();
 }
 
-// Drop manager
-dv_t droprate;
-intmap_t pckcnt, dropcnt;
-std::atomic_flag cntlock = ATOMIC_FLAG_INIT;
+
+//intmap_t rcvcnt, dropcnt, sendcnt, ackcnt;
+
 void __take_or_drop_pck(char*& buf, ssize_t& n) {
   //MY_INFO_STREAM << "__take_or_drop_pck: " << buf << std::endl;
   int i = 0;
@@ -91,12 +109,11 @@ void __take_or_drop_pck(char*& buf, ssize_t& n) {
     return;
   }
   grab_lock(cntlock);
-  pckcnt[p]++;
+  counter[p].rcvcnt++;
   release_lock(cntlock);
   if (rand_float() < droprate[p]) {
-    //MY_INFO_STREAM << "drop packet" << std::endl;
     grab_lock(cntlock);
-    dropcnt[p]++;
+    counter[p].dropcnt++;
     release_lock(cntlock);
   } else {
     std::string outmsg = "ACK:" + std::to_string(myport) + ':' + data;
@@ -118,6 +135,9 @@ void __increment_ack(char*& buf, ssize_t n) {
   grab_lock(acklock);
   ack[p] = (ack[p]+1)%10;
   release_lock(acklock);
+  grab_lock(cntlock);
+  counter[p].ackcnt++;
+  release_lock(cntlock);
 }
 
 float __divide(int a, int b) {
@@ -148,6 +168,7 @@ int main(int argc, char** argv) {
     MY_INFO_STREAM << "rcvarg = " << rcvarg << ", sendarg = " << sendarg << std::endl;  
   }
 
+  // Create receive list
   for (int i = rcvarg+1; i < sendarg; i+=2) {
     port_t p = cstr_to_port(argv[i]);
     float f = std::stof(argv[i+1]);
@@ -156,8 +177,9 @@ int main(int argc, char** argv) {
     struct sockaddr_in s;
     set_udp_addr(s, p);
     rcvaddr[p] = s;
+    counter[p] = {false, 0, 0, 0, 0};
   }
-
+  // Create send list
   pauseprobe = true;
   for (int i = sendarg+1; i < argc; i++) {
     if (std::string(argv[i]) == "last") {
@@ -168,42 +190,52 @@ int main(int argc, char** argv) {
     set_udp_addr(s, p);
     sendaddr[p] = s;
 
-    grab_lock(acklock);
-    grab_lock(seqlock);
-    grab_lock(cntlock);
+    grab_lock(acklock); grab_lock(seqlock);
     seq[p] = ack[p] = 0;
-    pckcnt[p] = dropcnt[p] = 0;
+    release_lock(seqlock); release_lock(acklock);
+
+    grab_lock(cntlock);
+    //rcvcnt[p] = dropcnt[p] = sendcnt[p] = ackcnt[p] = 0;
+    counter[p] = {true, 0, 0, 0, 0};
     release_lock(cntlock);
-    release_lock(seqlock);
-    release_lock(acklock);
 
     std::thread probing(probe_proc, p, s);
     probing.detach();
   }
 
   
-  int update_cnt = 0;
+  int update_times = 0;
   pauseprobe = false;
   struct sockaddr_in otheraddr;
   socklen_t addrlen = sizeof(otheraddr);
   char buf[bufferSize];
 
 probing:
-  update_cnt = 0;
+  update_times = 0;
   timestamp_t last_dv_update = TIMESTAMP_NOW;
   while (true) {
     if (checktimeout(last_dv_update,1000)) {
       grab_lock(cntlock);
-      MY_ERROR_STREAM << "1 second up, update dv table" << std::endl;
-      for (auto it : pckcnt) {
-        MY_INFO_STREAM << "Link to " << it.first << ": " << it.second
-            << " packets sent, " << dropcnt[it.first] << " lost, loss rate = "
-            << __divide(dropcnt[it.first], it.second) << std::endl;
+      //MY_ERROR_STREAM << "1 second up, update dv table" << std::endl;
+      for (auto it : counter) {
+        float lossrate;
+        if (it.second.type) { // sender
+          lossrate = __divide(it.second.sendcnt - it.second.ackcnt,
+              it.second.sendcnt);
+          MY_INFO_STREAM << "Link to " << it.first << ": " << it.second.sendcnt
+            << " packets sent, " << it.second.sendcnt - it.second.ackcnt
+            << " lost, loss rate = " << lossrate << std::endl;
+        } else {
+          lossrate = __divide(it.second.dropcnt, it.second.rcvcnt);
+          MY_INFO_STREAM << "Link to " << it.first << ": " << it.second.rcvcnt
+            << " packets sent, " << it.second.dropcnt
+            << " lost, loss rate = " << lossrate << std::endl;
+        }
+        
       }
-      
       release_lock(cntlock);
       last_dv_update = TIMESTAMP_NOW;
-      if (++update_cnt == 5) {
+      if (++update_times == 5) {
         MY_INFO_STREAM << "5 second up, broadcast myvec" << std::endl;
         goto dv_update;
       }
