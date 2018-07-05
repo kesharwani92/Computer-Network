@@ -12,7 +12,7 @@
 #include <dvnode.h>
 #include <thread>
 #include <vector>
-
+#include <math.h>
 typedef std::unordered_map<port_t, struct sockaddr_in> addrmap_t;
 typedef std::unordered_map<port_t, int> intmap_t;
 bool proc_running = true;
@@ -31,7 +31,7 @@ addrmap_t edges;
 void probe_proc(port_t dest,struct sockaddr_in addr) {
   std::string header = "PROBE:" + std::to_string(myport) + ':';
   while (proc_running) {
-    //if (pauseprobe)usleep(100000);
+    if (pauseprobe)usleep(100000);
     grab_lock(seqlock);
     std::string outmsg = header + std::to_string(seq[dest]);
     release_lock(seqlock); // udpsend blocks the process, release lock first
@@ -39,7 +39,7 @@ void probe_proc(port_t dest,struct sockaddr_in addr) {
     grab_lock(seqlock);
     seq[dest] = (seq[dest]+1)%10;
     release_lock(seqlock);
-    //usleep(100000);
+    usleep(10000);
   }
 }
 
@@ -89,9 +89,15 @@ void __take_or_drop_pck(char*& buf, ssize_t& n) {
   if (addr == rcvaddr.end()) {
     MY_ERROR_STREAM << "warning: " << p << " not in rcvaddr" << std::endl;
     return;
-  } else if (rand_float() < droprate[p]) {
+  }
+  grab_lock(cntlock);
+  pckcnt[p]++;
+  release_lock(cntlock);
+  if (rand_float() < droprate[p]) {
     //MY_INFO_STREAM << "drop packet" << std::endl;
-    ;
+    grab_lock(cntlock);
+    dropcnt[p]++;
+    release_lock(cntlock);
   } else {
     std::string outmsg = "ACK:" + std::to_string(myport) + ':' + data;
     udpsend(fd, addr->second, outmsg);
@@ -109,9 +115,13 @@ void __increment_ack(char*& buf, ssize_t n) {
   port_t p = cstr_to_port(buf);
   int newack = std::stoi(buf + i + 1);
   //MY_INFO_STREAM << "new ack = " << newack << std::endl;
-  //grab_lock(cntlock);
+  grab_lock(acklock);
+  ack[p] = (ack[p]+1)%10;
+  release_lock(acklock);
+}
 
-  //release_lock(cntlock);
+float __divide(int a, int b) {
+  return roundf(static_cast<float>(a)/b*100)/100;
 }
 
 int main(int argc, char** argv) {
@@ -171,21 +181,31 @@ int main(int argc, char** argv) {
     probing.detach();
   }
 
-  timestamp_t last_dv_update = TIMESTAMP_NOW;
+  
   int update_cnt = 0;
   pauseprobe = false;
   struct sockaddr_in otheraddr;
   socklen_t addrlen = sizeof(otheraddr);
   char buf[bufferSize];
+
+probing:
+  update_cnt = 0;
+  timestamp_t last_dv_update = TIMESTAMP_NOW;
   while (true) {
     if (checktimeout(last_dv_update,1000)) {
       grab_lock(cntlock);
       MY_ERROR_STREAM << "1 second up, update dv table" << std::endl;
+      for (auto it : pckcnt) {
+        MY_INFO_STREAM << "Link to " << it.first << ": " << it.second
+            << " packets sent, " << dropcnt[it.first] << " lost, loss rate = "
+            << __divide(dropcnt[it.first], it.second) << std::endl;
+      }
+      
       release_lock(cntlock);
       last_dv_update = TIMESTAMP_NOW;
       if (++update_cnt == 5) {
         MY_INFO_STREAM << "5 second up, broadcast myvec" << std::endl;
-        update_cnt = 0;
+        goto dv_update;
       }
     }
     ssize_t ret = recvfrom(fd, buf, bufferSize, 0, (struct sockaddr*)&otheraddr,
@@ -198,20 +218,20 @@ int main(int argc, char** argv) {
       __take_or_drop_pck(bufcpy, ret);
     } else if (msgtype == "ACK") {
       __increment_ack(bufcpy, ret);
-    }else {
+    } else if (msgtype == "DV") {
+      goto dv_update;
+    } else {
         MY_INFO_STREAM << "unimlemented message: " << buf << std::endl;
     }
   }
   
-  /*
-  timestamp_t t1 = TIMESTAMP_NOW;
+dv_update:
+  MY_INFO_STREAM << "dv_update phase" << std::endl;
+  last_dv_update = TIMESTAMP_NOW;
   while (true) {
-    std::cout << '.';
-    if (checktimeout(t1,500)) {
-      std::cout << "timeout!" << std::endl;
-      break;
+    if (checktimeout(last_dv_update,1000)) {
+      goto probing;
     }
   }
-  */
   return 0;
 }
