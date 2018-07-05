@@ -1,0 +1,67 @@
+CSEE4119 Programming Assignment 2
+Yan-Song Chen, yc3240
+
+1. Build and Run
+To compile the source code, cd to the homework directory.
+$ make
+Three executable files (gbnnode, dvnode, and cnnode) should be created in the
+directory.
+
+2. Data Structures
+2-1. Part 1
+I used a queue to cache cin strings. This allows the user to type in while
+the node is transmitting data.
+On the other hand, I use spinlock to protect the threads from racing conditions.
+
+2-2. Part 2
+I used unordered_map (hashmap) to store the distance vector table as it has
+constant access time. This explains why my print out is not sorted.
+
+2-3. Part 3
+In order to record drop/send statistics, I designed a struct record_t to store
+number of received packets, dropped packet, sent packets, and acked packets. An 
+boolean attibute is added to identify direction of neighbor(send/receive sides).
+On top of record_t, I use unordered_map to associate port numbers with records.
+
+3. Algorithms
+3-1. Part 1
+The gbnnode consists of three threads: cin thread, gbn send thread, and udp
+listening thread.
+
+The cin thread pushes user input to a buffer (vector of strings).
+The gbn send thread pull out a message to send, and invokes the __gbn_fsm
+(finite state machine). This is the actual implementation of GBN protocol. There
+are three states in the FSM: send, check ack, and timeout. The send state
+moves nextseq forward if the base is incremented; the ack state checks the ack
+value maintained by the listener thread; the timeout state resend all packets
+from base to nextseq.
+
+In order to prevent overflow, I reset sequence number when a string is finished.
+
+3-2. Part 2
+Initilaly, the distance vector is equal to edge cost from the arguments. After
+the network is activated by "last", the bellman_ford_update() function runs
+the algorithm and broadcasts its own distance vector if an entry is updated.
+
+3-3. Part 3
+Under the assumption that ack never fails, the sender can estimate the number of
+dropped packets by:
+ # dropped = # sent - # ack
+The receive side know the number of dropped packets, so the loss rate can be
+estimated easily.
+
+The cnnode program is a two-state FSM: probing state and distance vector (DV)
+exchange state.
+
+A simply the GBN protocol, the sequence number ranges from 0 to 9. This is 
+enough for window size 5. To prevent overflowing the links, the probing state
+sends out probing messages every 10 ms. Every five seconds, the probing state 
+will rewrite its distance vector by estimated loss rate, and jumpt to DV state.
+
+It will also switch to the DV state as soon as it receives a "DV" message.
+The DV state will run the distributed Bellman-Ford algorithm as in part 2. If
+no distance update takes place or no DV message arrives for one second, it will
+switch back to the probing state.
+
+4. Test cases
+Please refer to test.txt for details.
