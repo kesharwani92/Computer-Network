@@ -236,39 +236,6 @@ int main(int argc, char** argv) {
   buf[ret] = '\0';
   __broadcast("GO:");
 
-dv_update:
-  settimeout(0, 100);
-  pauseprobe = true;
-  last_dv_update = TIMESTAMP_NOW;
-  // Update distance vector
-  for (auto it : statistics) {
-    myvec[it.first] = it.second.lossrate;
-    myhop[it.first] = it.first;
-  }
-  bellman_ford_update(myvec, myhop, memo);
-  std::string header = "DV:" + std::to_string(myport) + entryDelim;
-  std::string outmsg = header + dv_out(myvec);
-  //MY_INFO_STREAM << "outmsg = " << outmsg << std::endl;
-  __broadcast(outmsg);
-  while (true) {
-    if (checktimeout(last_dv_update,1000)) {
-      print_table(myport, myvec, myhop);
-      goto probing;
-    }
-    ssize_t ret = recvfrom(fd, buf, bufferSize, 0, (struct sockaddr*)&otheraddr,
-      &addrlen);
-    if (errno == EAGAIN || errno == EWOULDBLOCK ) continue;
-    buf[ret] = '\0';
-    if (std::string(buf,3) != "DV:") continue; // ignore non-DV message
-    std::pair<port_t, dv_t> msg = dv_in(std::string(buf+3, ret-3));
-    memo[msg.first] = msg.second;
-    last_dv_update = TIMESTAMP_NOW;
-    if (bellman_ford_update(myvec, myhop, memo)) {
-      outmsg = header + dv_out(myvec);
-      __broadcast(outmsg);
-    }
-  } 
-
 probing:
   settimeout(0, 0);
   pauseprobe = false;
@@ -315,10 +282,43 @@ probing:
       std::pair<port_t, dv_t> msg = dv_in(std::string(bufcpy, ret));
       memo[msg.first] = msg.second;
       goto dv_update;
-    } else {
-        MY_INFO_STREAM << "unimlemented message: " << buf << std::endl;
     }
   }
+
+dv_update:
+  settimeout(0, 100);
+  pauseprobe = true;
+  last_dv_update = TIMESTAMP_NOW;
+  // Update distance vector
+  for (auto it : statistics) {
+    myvec[it.first] = it.second.lossrate;
+    myhop[it.first] = it.first;
+  }
+  bellman_ford_update(myvec, myhop, memo);
+  std::string header = "DV:" + std::to_string(myport) + entryDelim;
+  std::string outmsg = header + dv_out(myvec);
+  //MY_INFO_STREAM << "outmsg = " << outmsg << std::endl;
+  __broadcast(outmsg);
+  while (true) {
+    if (checktimeout(last_dv_update,1000)) {
+      print_table(myport, myvec, myhop);
+      goto probing;
+    }
+    ssize_t ret = recvfrom(fd, buf, bufferSize, 0, (struct sockaddr*)&otheraddr,
+      &addrlen);
+    if (errno == EAGAIN || errno == EWOULDBLOCK ) continue;
+    buf[ret] = '\0';
+    if (std::string(buf,3) != "DV:") continue; // ignore non-DV message
+    std::pair<port_t, dv_t> msg = dv_in(std::string(buf+3, ret-3));
+    memo[msg.first] = msg.second;
+    last_dv_update = TIMESTAMP_NOW;
+    if (bellman_ford_update(myvec, myhop, memo)) {
+      outmsg = header + dv_out(myvec);
+      __broadcast(outmsg);
+    }
+  } 
+
+
 
 
   return 0;
