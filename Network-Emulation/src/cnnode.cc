@@ -14,6 +14,8 @@
 #include <vector>
 #include <math.h>
 
+
+
 typedef struct {
   bool type;  // true: send, false: receive
   int sendcnt;
@@ -49,6 +51,17 @@ port_t myport;
 int fd;
 addrmap_t edges;
 
+void settimeout(time_t sec, suseconds_t usec) {
+  struct timeval tv;
+  tv.tv_sec = sec;
+  tv.tv_usec = usec;
+  if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+    std::cerr << "error: setsockopt failed" << std::endl;
+    std::cerr << "error: " << strerror(errno) << std::endl;
+    throw std::exception();
+  }
+}
+
 // Go-Back-N sequences
 std::unordered_map<port_t, int> seq, ack;
 std::atomic_flag acklock = ATOMIC_FLAG_INIT; 
@@ -57,7 +70,10 @@ std::atomic_flag seqlock = ATOMIC_FLAG_INIT;
 void probe_proc(port_t dest,struct sockaddr_in addr) {
   std::string header = "PROBE:" + std::to_string(myport) + ':';
   while (proc_running) {
-    if (pauseprobe)usleep(100000);
+    if (pauseprobe) {
+      usleep(100000);
+      continue;
+    }
     grab_lock(seqlock);
     std::string outmsg = header + std::to_string(seq[dest]);
     release_lock(seqlock); // udpsend blocks the process, release lock first
@@ -170,12 +186,10 @@ int main(int argc, char** argv) {
   if (!rcvarg || !sendarg) {
     MY_ERROR_STREAM << "error: missing receive or send arguments" << std::endl;
     exit(1);
-  } else {
-    MY_INFO_STREAM << "rcvarg = " << rcvarg << ", sendarg = " << sendarg
-      << std::endl;  
   }
 
   // Create receive list
+  pauseprobe = true;
   for (int i = rcvarg+1; i < sendarg; i+=2) {
     port_t p = cstr_to_port(argv[i]);
     float f = std::stof(argv[i+1]);
@@ -187,9 +201,10 @@ int main(int argc, char** argv) {
     statistics[p] = {false, 0, 0, 0, 0};
   }
   // Create send list
-  pauseprobe = true;
+  
   for (int i = sendarg+1; i < argc; i++) {
     if (std::string(argv[i]) == "last") {
+      __broadcast("GO:");
       break; // trigger dv broadcast
     }
     port_t p = cstr_to_port(argv[i]);
@@ -210,16 +225,55 @@ int main(int argc, char** argv) {
     probing.detach();
   }
 
-  
   int update_times = 0;
   struct sockaddr_in otheraddr;
   socklen_t addrlen = sizeof(otheraddr);
   char buf[bufferSize];
+  timestamp_t last_dv_update;
+
+  pauseprobe = true;
+  ssize_t ret = recvfrom(fd, buf, bufferSize, 0, (struct sockaddr*)&otheraddr, &addrlen);
+  buf[ret] = '\0';
+  __broadcast("GO:");
+
+dv_update:
+  settimeout(0, 100);
+  pauseprobe = true;
+  last_dv_update = TIMESTAMP_NOW;
+  // Update distance vector
+  for (auto it : statistics) {
+    myvec[it.first] = it.second.lossrate;
+    myhop[it.first] = it.first;
+  }
+  bellman_ford_update(myvec, myhop, memo);
+  std::string header = "DV:" + std::to_string(myport) + entryDelim;
+  std::string outmsg = header + dv_out(myvec);
+  //MY_INFO_STREAM << "outmsg = " << outmsg << std::endl;
+  __broadcast(outmsg);
+  while (true) {
+    if (checktimeout(last_dv_update,1000)) {
+      print_table(myport, myvec, myhop);
+      goto probing;
+    }
+    ssize_t ret = recvfrom(fd, buf, bufferSize, 0, (struct sockaddr*)&otheraddr,
+      &addrlen);
+    if (errno == EAGAIN || errno == EWOULDBLOCK ) continue;
+    buf[ret] = '\0';
+    if (std::string(buf,3) != "DV:") continue; // ignore non-DV message
+    std::pair<port_t, dv_t> msg = dv_in(std::string(buf+3, ret-3));
+    memo[msg.first] = msg.second;
+    last_dv_update = TIMESTAMP_NOW;
+    if (bellman_ford_update(myvec, myhop, memo)) {
+      outmsg = header + dv_out(myvec);
+      __broadcast(outmsg);
+    }
+  } 
 
 probing:
+  settimeout(0, 0);
   pauseprobe = false;
   update_times = 0;
-  timestamp_t last_dv_update = TIMESTAMP_NOW;
+  last_dv_update = TIMESTAMP_NOW;
   while (true) {
     if (checktimeout(last_dv_update,1000)) {
       grab_lock(cntlock);
@@ -265,37 +319,7 @@ probing:
         MY_INFO_STREAM << "unimlemented message: " << buf << std::endl;
     }
   }
-  
-dv_update:
-  //MY_INFO_STREAM << "dv_update phase" << std::endl;
-  pauseprobe = true;
-  last_dv_update = TIMESTAMP_NOW;
-  // Update distance vector
-  for (auto it : statistics) {
-    myvec[it.first] = it.second.lossrate;
-    myhop[it.first] = it.first;
-  }
-  bellman_ford_update(myvec, myhop, memo);
-  std::string header = "DV:" + std::to_string(myport) + entryDelim;
-  std::string outmsg = header + dv_out(myvec);
-  //MY_INFO_STREAM << "outmsg = " << outmsg << std::endl;
-  __broadcast(outmsg);
-  while (true) {
-    if (checktimeout(last_dv_update,1000)) {
-      print_table(myport, myvec, myhop);
-      goto probing;
-    }
-    ssize_t ret = recvfrom(fd, buf, bufferSize, 0, (struct sockaddr*)&otheraddr,
-      &addrlen);
-    buf[ret] = '\0';
-    if (std::string(buf,3) != "DV:") continue; // ignore non-DV message
-    std::pair<port_t, dv_t> msg = dv_in(std::string(buf+3, ret-3));
-    memo[msg.first] = msg.second;
-    last_dv_update = TIMESTAMP_NOW;
-    if (bellman_ford_update(myvec, myhop, memo)) {
-      outmsg = header + dv_out(myvec);
-      __broadcast(outmsg);
-    }
-  }
+
+
   return 0;
 }
