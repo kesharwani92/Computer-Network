@@ -210,3 +210,83 @@ The result works as expected:
  - (1.1) -> Node 2001; Next hop -> Node 2003
  - (0.4) -> Node 2003
  - (0.6) -> Node 2002; Next hop -> Node 2003
+
+================================================================================
+Part 3 - Combination
+================================================================================
+3-1. I ran the example shown in figure 4, and the loss rate converged.
+
+$ ./cnnode 1111 receive send  2222 3333
+...
+[1530806912.741] Link to 3333: 1856 packets sent, 922 lost, loss rate = 0.5
+[1530806912.771] Link to 2222: 1856 packets sent, 175 lost, loss rate = 0.09
+[1530806914.503] Node 1111 Routing Table
+ - (0) -> Node 4444; Next hop -> Node 3333
+ - (0.09) -> Node 2222
+ - (0.3) -> Node 3333; Next hop -> Node 2222
+
+$ ./cnnode 2222 receive 1111 .1 send 3333 4444
+...
+[1530806912.725] Link to 4444: 1853 packets sent, 1510 lost, loss rate = 0.81
+[1530806912.70] Link to 3333: 1854 packets sent, 382 lost, loss rate = 0.21
+[1530806912.98] Link to 1111: 1856 packets sent, 174 lost, loss rate = 0.09
+[1530806914.502] Node 2222 Routing Table
+ - (0.09) -> Node 1111
+ - (0.21) -> Node 3333
+ - (0.09) -> Node 4444; Next hop -> Node 1111
+
+$ ./cnnode 3333 receive 1111 .5 2222 .2 send 4444
+...
+[1530806912.719] Link to 4444: 1859 packets sent, 898 lost, loss rate = 0.48
+[1530806912.770] Link to 2222: 1852 packets sent, 379 lost, loss rate = 0.2
+[1530806912.781] Link to 1111: 1855 packets sent, 921 lost, loss rate = 0.5
+[1530806914.503] Node 3333 Routing Table
+ - (0.29) -> Node 1111; Next hop -> Node 2222
+ - (0.2) -> Node 2222
+ - (0.29) -> Node 4444; Next hop -> Node 2222
+
+$ ./cnnode 4444 receive 2222 .8 3333 .5 send last
+[1530806913.407] Link to 3333: 1956 packets sent, 946 lost, loss rate = 0.48
+[1530806913.511] Link to 2222: 1951 packets sent, 1582 lost, loss rate = 0.81
+[1530806914.552] Node 4444 Routing Table
+ - (0) -> Node 1111; Next hop -> Node 3333
+ - (0.66) -> Node 2222; Next hop -> Node 3333
+ - (0.48) -> Node 3333
+
+3-2. Same topology as 2-2. The loss rate and routing table converged.
+$ ./cnnode 2001 receive send 2002 2003
+...
+[1530808219.522] Link to 2003: 2846 packets sent, 2262 lost, loss rate = 0.79
+[1530808219.560] Link to 2002: 2846 packets sent, 1400 lost, loss rate = 0.49
+[1530808221.550] Node 2001 Routing Table
+ - (1.06) -> Node 2004; Next hop -> Node 2002
+ - (0.49) -> Node 2002
+ - (0.69) -> Node 2003; Next hop -> Node 2002
+
+$ ./cnnode 2002 receive 2001 0.5 2004 0.7 send 2003
+...
+[1530808219.348] Link to 2003: 2844 packets sent, 576 lost, loss rate = 0.2
+[1530808219.404] Link to 2004: 2828 packets sent, 1984 lost, loss rate = 0.7
+[1530808219.419] Link to 2001: 2844 packets sent, 1399 lost, loss rate = 0.49
+[1530808221.550] Node 2002 Routing Table
+ - (0.49) -> Node 2001
+ - (0.6) -> Node 2004; Next hop -> Node 2003
+ - (0.2) -> Node 2003
+
+$ ./cnnode 2003 receive 2001 0.8 2002 0.2 2004 0.4 send
+...
+[1530808220.86] Link to 2004: 2924 packets sent, 1169 lost, loss rate = 0.4
+[1530808220.124] Link to 2002: 2939 packets sent, 596 lost, loss rate = 0.2
+[1530808220.137] Link to 2001: 2941 packets sent, 2345 lost, loss rate = 0.8
+[1530808221.550] Node 2003 Routing Table
+ - (0.66) -> Node 2001; Next hop -> Node 2002
+ - (0.2) -> Node 2002
+ - (0.4) -> Node 2004
+
+$ ./cnnode 2004 receive send 2002 2003 last
+[1530808226.971] Link to 2003: 3421 packets sent, 1384 lost, loss rate = 0.4
+[1530808226.50] Link to 2002: 3421 packets sent, 2431 lost, loss rate = 0.71
+[1530808227.541] Node 2004 Routing Table
+ - (1.05) -> Node 2001; Next hop -> Node 2003
+ - (0.6) -> Node 2002; Next hop -> Node 2003
+ - (0.4) -> Node 2003
